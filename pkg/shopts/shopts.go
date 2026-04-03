@@ -10,7 +10,10 @@ import (
 	"strings"
 )
 
-const DefaultPrefix = "GO_SHOPTS_"
+const (
+	DefaultPrefix       = "GO_SHOPTS_"
+	listDefaultMaxItems = 100
+)
 
 var bashVarRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -61,14 +64,12 @@ func Run(argv []string, w io.Writer) error {
 		return printUsage(w, schema)
 	}
 
-	values, err := parseArgs(args, schema)
-	if err != nil {
-		return err
-	}
-
+	values, parseErrors := parseArgs(args, schema)
 	validationErrors := validateParsedValues(schema, values)
-	if len(validationErrors) > 0 {
-		return errors.New(strings.Join(validationErrors, "; "))
+
+	allErrors := append(parseErrors, validationErrors...)
+	if len(allErrors) > 0 {
+		return errors.New(strings.Join(allErrors, "; "))
 	}
 
 	for _, entry := range schema {
@@ -345,7 +346,6 @@ func isAlphanumeric(b byte) bool {
 // Useful for callers that pass indented heredocs so schema lines can be
 // written with natural indentation in shell scripts.
 func dedent(s string) string {
-	// Space-only dedent: count leading spaces on non-empty lines
 	lines := strings.Split(s, "\n")
 	min := -1
 	for _, l := range lines {
@@ -353,7 +353,7 @@ func dedent(s string) string {
 			continue
 		}
 		i := 0
-		for i < len(l) && l[i] == ' ' {
+		for i < len(l) && (l[i] == ' ' || l[i] == '\t') {
 			i++
 		}
 		if min == -1 || i < min {
@@ -369,7 +369,7 @@ func dedent(s string) string {
 			if len(l) >= min {
 				lines[idx] = l[min:]
 			} else {
-				lines[idx] = strings.TrimLeft(l, " ")
+				lines[idx] = strings.TrimLeft(l, " \t")
 			}
 		}
 	}
@@ -446,7 +446,7 @@ func splitEnum(s string) []string {
 	return out
 }
 
-func parseArgs(args []string, schema []schemaEntry) (map[string]string, error) {
+func parseArgs(args []string, schema []schemaEntry) (map[string]string, []string) {
 	shortMapping := map[string]schemaEntry{}
 	longMapping := map[string]schemaEntry{}
 	for _, e := range schema {
@@ -458,22 +458,25 @@ func parseArgs(args []string, schema []schemaEntry) (map[string]string, error) {
 
 	listValues := map[string][]string{}
 	result := map[string]string{}
+	var parseErrors []string
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
 			if i+1 < len(args) {
-				return nil, fmt.Errorf("unsupported positional argument after --: %q", args[i+1])
+				parseErrors = append(parseErrors, fmt.Sprintf("unsupported positional argument after --: %q", args[i+1]))
 			}
 			break
 		}
 		if !strings.HasPrefix(arg, "-") || arg == "-" {
-			return nil, fmt.Errorf("unsupported argument: %q", arg)
+			parseErrors = append(parseErrors, fmt.Sprintf("unsupported argument: %q", arg))
+			continue
 		}
 
 		entry, key, val, consumedNext, err := parseOption(arg, args, i, shortMapping, longMapping)
 		if err != nil {
-			return nil, err
+			parseErrors = append(parseErrors, err.Error())
+			continue
 		}
 		if consumedNext {
 			i++
@@ -495,21 +498,36 @@ func parseArgs(args []string, schema []schemaEntry) (map[string]string, error) {
 	}
 	for key, vals := range listValues {
 		entry := longMapping[key]
-		if entry.MinItems != nil && len(vals) < *entry.MinItems {
-			return nil, fmt.Errorf("option %q requires at least %d items, got %d", displayName(entry), *entry.MinItems, len(vals))
+
+		effectiveMin := 0
+		if entry.MinItems != nil {
+			effectiveMin = *entry.MinItems
+		} else if entry.Required {
+			effectiveMin = 1
 		}
-		if entry.MaxItems != nil && len(vals) > *entry.MaxItems {
-			return nil, fmt.Errorf("option %q allows at most %d items, got %d", displayName(entry), *entry.MaxItems, len(vals))
+
+		effectiveMax := listDefaultMaxItems
+		if entry.MaxItems != nil {
+			effectiveMax = *entry.MaxItems
+		}
+
+		if len(vals) < effectiveMin {
+			parseErrors = append(parseErrors, fmt.Sprintf("option %q requires at least %d items, got %d", displayName(entry), effectiveMin, len(vals)))
+			continue
+		}
+		if len(vals) > effectiveMax {
+			parseErrors = append(parseErrors, fmt.Sprintf("option %q allows at most %d items, got %d", displayName(entry), effectiveMax, len(vals)))
+			continue
 		}
 		for _, item := range vals {
 			if err := validateValue(entry, item); err != nil {
-				return nil, fmt.Errorf("option %q invalid: %s", displayName(entry), err.Error())
+				parseErrors = append(parseErrors, fmt.Sprintf("option %q invalid: %s", displayName(entry), err.Error()))
 			}
 		}
 		result[key] = strings.Join(vals, delim)
 	}
 
-	return result, nil
+	return result, parseErrors
 }
 
 func parseOption(arg string, args []string, index int, shortMapping, longMapping map[string]schemaEntry) (schemaEntry, string, string, bool, error) {
@@ -603,15 +621,15 @@ func validateValue(entry schemaEntry, value string) error {
 		return nil
 	case "int":
 		if _, err := strconv.Atoi(value); err != nil {
-			return fmt.Errorf("int value required: %v", err)
+			return errors.New("must be a valid integer")
 		}
 	case "float":
 		if _, err := strconv.ParseFloat(value, 64); err != nil {
-			return fmt.Errorf("float value required: %v", err)
+			return errors.New("must be a valid number")
 		}
 	case "bool":
 		if _, err := strconv.ParseBool(value); err != nil {
-			return fmt.Errorf("bool value required: %v", err)
+			return errors.New("must be a valid boolean")
 		}
 	}
 

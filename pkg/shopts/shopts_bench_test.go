@@ -35,8 +35,8 @@ func BenchmarkParseArgs(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := parseArgs(benchArgs, schema); err != nil {
-			b.Fatal(err)
+		if _, errs := parseArgs(benchArgs, schema); len(errs) > 0 {
+			b.Fatal(errs[0])
 		}
 	}
 }
@@ -81,9 +81,9 @@ func BenchmarkFullRun(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		values, err := parseArgs(benchArgs, schema)
-		if err != nil {
-			b.Fatal(err)
+		values, errs := parseArgs(benchArgs, schema)
+		if len(errs) > 0 {
+			b.Fatal(errs[0])
 		}
 		// Simulate output
 		_ = values

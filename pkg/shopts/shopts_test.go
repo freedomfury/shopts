@@ -174,7 +174,7 @@ func TestParseSchema_QuotedValues(t *testing.T) {
 	schema := `long=mode;type=enum;enum="dev,prod,test";help="Mode; selects env";`
 	entries, err := parseSchema(schema)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -194,7 +194,7 @@ func TestParseSchema_Dedent(t *testing.T) {
     `
 	entries, err := parseSchema(schema)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
@@ -205,7 +205,7 @@ func TestParseSchema_PatternCompiles(t *testing.T) {
 	schema := `long=email;type=string;pattern=^[^@]+@[^@]+$;`
 	entries, err := parseSchema(schema)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if entries[0].CompiledPattern == nil {
 		t.Fatal("expected compiled pattern")
@@ -232,9 +232,9 @@ func TestParseSchema_FailureWithoutPattern(t *testing.T) {
 
 func TestParseArgs_LongEquals(t *testing.T) {
 	schema, _ := parseSchema("long=name;type=string;")
-	vals, err := parseArgs([]string{"--name=alice"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"--name=alice"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["name"] != "alice" {
 		t.Fatalf("expected alice, got %q", vals["name"])
@@ -243,9 +243,9 @@ func TestParseArgs_LongEquals(t *testing.T) {
 
 func TestParseArgs_ShortEquals(t *testing.T) {
 	schema, _ := parseSchema("short=n;long=name;type=string;")
-	vals, err := parseArgs([]string{"-n=bob"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"-n=bob"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["name"] != "bob" {
 		t.Fatalf("expected bob, got %q", vals["name"])
@@ -254,9 +254,9 @@ func TestParseArgs_ShortEquals(t *testing.T) {
 
 func TestParseArgs_ShortSeparate(t *testing.T) {
 	schema, _ := parseSchema("short=n;long=name;type=string;")
-	vals, err := parseArgs([]string{"-n", "charlie"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"-n", "charlie"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["name"] != "charlie" {
 		t.Fatalf("expected charlie, got %q", vals["name"])
@@ -265,9 +265,9 @@ func TestParseArgs_ShortSeparate(t *testing.T) {
 
 func TestParseArgs_Flag(t *testing.T) {
 	schema, _ := parseSchema("short=v;long=verbose;type=flag;")
-	vals, err := parseArgs([]string{"-v"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"-v"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["verbose"] != "true" {
 		t.Fatalf("expected true, got %q", vals["verbose"])
@@ -276,17 +276,17 @@ func TestParseArgs_Flag(t *testing.T) {
 
 func TestParseArgs_FlagRejectsValue(t *testing.T) {
 	schema, _ := parseSchema("short=v;long=verbose;type=flag;")
-	_, err := parseArgs([]string{"--verbose=yes"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"--verbose=yes"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for flag with inline value")
 	}
 }
 
 func TestParseArgs_DoubleDash(t *testing.T) {
 	schema, _ := parseSchema("long=name;type=string;")
-	vals, err := parseArgs([]string{"--name=x", "--"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"--name=x", "--"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["name"] != "x" {
 		t.Fatalf("expected x, got %q", vals["name"])
@@ -295,49 +295,49 @@ func TestParseArgs_DoubleDash(t *testing.T) {
 
 func TestParseArgs_DoubleDashWithTrailingArg(t *testing.T) {
 	schema, _ := parseSchema("long=name;type=string;")
-	_, err := parseArgs([]string{"--name=x", "--", "extra"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"--name=x", "--", "extra"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for positional arg after --")
 	}
 }
 
 func TestParseArgs_UnknownOption(t *testing.T) {
 	schema, _ := parseSchema("long=name;type=string;")
-	_, err := parseArgs([]string{"--unknown=x"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"--unknown=x"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for unknown option")
 	}
 }
 
 func TestParseArgs_PositionalRejected(t *testing.T) {
 	schema, _ := parseSchema("long=name;type=string;")
-	_, err := parseArgs([]string{"positional"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"positional"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for positional arg")
 	}
 }
 
 func TestParseArgs_ShortBundleRejected(t *testing.T) {
 	schema, _ := parseSchema("short=a;long=aa;type=flag;\nshort=b;long=bb;type=flag;")
-	_, err := parseArgs([]string{"-ab"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"-ab"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for short option bundle")
 	}
 }
 
 func TestParseArgs_MissingValue(t *testing.T) {
 	schema, _ := parseSchema("long=name;type=string;")
-	_, err := parseArgs([]string{"--name"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"--name"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for option without value")
 	}
 }
 
 func TestParseArgs_List(t *testing.T) {
 	schema, _ := parseSchema("short=t;long=tags;type=list;")
-	vals, err := parseArgs([]string{"-t", "a", "-t", "b", "-t", "c"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"-t", "a", "-t", "b", "-t", "c"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["tags"] != "a,b,c" {
 		t.Fatalf("expected a,b,c, got %q", vals["tags"])
@@ -347,9 +347,9 @@ func TestParseArgs_List(t *testing.T) {
 func TestParseArgs_ListCustomDelimiter(t *testing.T) {
 	t.Setenv("GO_SHOPTS_LIST_DELIM", ":")
 	schema, _ := parseSchema("long=tags;type=list;")
-	vals, err := parseArgs([]string{"--tags=a", "--tags=b"}, schema)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	vals, errs := parseArgs([]string{"--tags=a", "--tags=b"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if vals["tags"] != "a:b" {
 		t.Fatalf("expected a:b, got %q", vals["tags"])
@@ -358,16 +358,16 @@ func TestParseArgs_ListCustomDelimiter(t *testing.T) {
 
 func TestParseArgs_ListMinItems(t *testing.T) {
 	schema, _ := parseSchema("long=tags;type=list;minItems=2;")
-	_, err := parseArgs([]string{"--tags=a"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"--tags=a"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for too few list items")
 	}
 }
 
 func TestParseArgs_ListMaxItems(t *testing.T) {
 	schema, _ := parseSchema("long=tags;type=list;maxItems=1;")
-	_, err := parseArgs([]string{"--tags=a", "--tags=b"}, schema)
-	if err == nil {
+	_, errs := parseArgs([]string{"--tags=a", "--tags=b"}, schema)
+	if errs == nil {
 		t.Fatal("expected error for too many list items")
 	}
 }
@@ -411,7 +411,7 @@ func TestValidate_NulRejected(t *testing.T) {
 func TestValidateValue_Int(t *testing.T) {
 	entry := schemaEntry{Long: "n", Type: "int"}
 	if err := validateValue(entry, "42"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if err := validateValue(entry, "abc"); err == nil {
 		t.Fatal("expected error for non-int")
@@ -421,7 +421,7 @@ func TestValidateValue_Int(t *testing.T) {
 func TestValidateValue_Float(t *testing.T) {
 	entry := schemaEntry{Long: "f", Type: "float"}
 	if err := validateValue(entry, "3.14"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if err := validateValue(entry, "abc"); err == nil {
 		t.Fatal("expected error for non-float")
@@ -443,7 +443,7 @@ func TestValidateValue_Bool(t *testing.T) {
 func TestValidateValue_Enum(t *testing.T) {
 	entry := schemaEntry{Long: "e", Type: "enum", Enum: []string{"a", "b", "c"}}
 	if err := validateValue(entry, "a"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if err := validateValue(entry, "d"); err == nil {
 		t.Fatal("expected error for invalid enum value")
@@ -454,7 +454,7 @@ func TestValidateValue_MinMaxLength(t *testing.T) {
 	min, max := 3, 10
 	entry := schemaEntry{Long: "s", Type: "string", MinLength: &min, MaxLength: &max}
 	if err := validateValue(entry, "abc"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if err := validateValue(entry, "ab"); err == nil {
 		t.Fatal("expected error for too short")
@@ -468,7 +468,7 @@ func TestValidateValue_Pattern(t *testing.T) {
 	re := regexp.MustCompile(`^\w+@\w+\.\w+$`)
 	entry := schemaEntry{Long: "e", Type: "string", Pattern: re.String(), CompiledPattern: re}
 	if err := validateValue(entry, "a@b.c"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if err := validateValue(entry, "notanemail"); err == nil {
 		t.Fatal("expected error for pattern mismatch")
@@ -530,7 +530,7 @@ func TestResolvedValue_NotEmitted(t *testing.T) {
 func TestShVarName_Basic(t *testing.T) {
 	name, err := shVarName("foo", "PREFIX_", false)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if name != "PREFIX_foo" {
 		t.Fatalf("expected PREFIX_foo, got %q", name)
@@ -540,7 +540,7 @@ func TestShVarName_Basic(t *testing.T) {
 func TestShVarName_Upcase(t *testing.T) {
 	name, err := shVarName("foo-bar", "P_", true)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if name != "P_FOO_BAR" {
 		t.Fatalf("expected P_FOO_BAR, got %q", name)
@@ -550,7 +550,7 @@ func TestShVarName_Upcase(t *testing.T) {
 func TestShVarName_HyphenSanitized(t *testing.T) {
 	name, err := shVarName("my-opt", "X_", false)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if name != "X_my_opt" {
 		t.Fatalf("expected X_my_opt, got %q", name)
@@ -598,12 +598,147 @@ func TestSplitFields_BackslashOutsideQuotes(t *testing.T) {
 	// Backslash outside quotes should be literal, not an escape character.
 	fields, err := splitFields(`pattern=\d+;long=foo;`)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected errors: %v", err)
 	}
 	if len(fields) != 2 {
 		t.Fatalf("expected 2 fields, got %d: %v", len(fields), fields)
 	}
 	if fields[0] != `pattern=\d+` {
 		t.Fatalf("expected pattern=\\d+, got %q", fields[0])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Batched error and cleaned message tests (feedback-1)
+// ---------------------------------------------------------------------------
+
+func TestParseArgs_BatchesMultipleUnknownOptions(t *testing.T) {
+	schema, _ := parseSchema("long=user;type=string;")
+	// Use flag-style unknowns so no extra positional args are generated
+	_, errs := parseArgs([]string{"--user=alice", "--unknown1", "--unknown2"}, schema)
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 errors, got %d: %v", len(errs), errs)
+	}
+	combined := strings.Join(errs, "; ")
+	if !strings.Contains(combined, "unknown option: --unknown1") {
+		t.Errorf("expected unknown1 in errors, got: %q", combined)
+	}
+	if !strings.Contains(combined, "unknown option: --unknown2") {
+		t.Errorf("expected unknown2 in errors, got: %q", combined)
+	}
+}
+
+func TestRun_BatchesTypeErrors(t *testing.T) {
+	// Type validation is batched via validateParsedValues; test through Run
+	schema := "long=port;type=int;\nlong=rate;type=float;"
+	var buf strings.Builder
+	err := Run([]string{"shopts", schema, "--port=abc", "--rate=xyz"}, &buf)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "must be a valid integer") {
+		t.Errorf("expected clean int error, got: %q", msg)
+	}
+	if !strings.Contains(msg, "must be a valid number") {
+		t.Errorf("expected clean float error, got: %q", msg)
+	}
+	// Must not expose Go internals
+	if strings.Contains(msg, "strconv") {
+		t.Errorf("error message must not leak strconv internals: %q", msg)
+	}
+	if strings.Contains(msg, "ParseFloat") {
+		t.Errorf("error message must not leak ParseFloat internals: %q", msg)
+	}
+}
+
+func TestRun_BatchAllErrors(t *testing.T) {
+	schema := "long=name;type=string;required=true;\nlong=age;type=int;required=true;"
+	var buf strings.Builder
+	// --age has parse error; --name is missing (validation error)
+	err := Run([]string{"shopts", schema, "--age=old"}, &buf)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "must be a valid integer") {
+		t.Errorf("expected clean int error message in: %q", msg)
+	}
+	if !strings.Contains(msg, "missing required option") {
+		t.Errorf("expected required field error in: %q", msg)
+	}
+}
+
+func TestValidateValue_IntCleanError(t *testing.T) {
+	entry := schemaEntry{Long: "port", Type: "int"}
+	err := validateValue(entry, "abc")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "must be a valid integer") {
+		t.Errorf("expected clean error, got: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "strconv") {
+		t.Errorf("error must not leak strconv: %q", err.Error())
+	}
+}
+
+func TestValidateValue_FloatCleanError(t *testing.T) {
+	entry := schemaEntry{Long: "rate", Type: "float"}
+	err := validateValue(entry, "notanumber")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "must be a valid number") {
+		t.Errorf("expected clean error, got: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "strconv") || strings.Contains(err.Error(), "ParseFloat") {
+		t.Errorf("error must not leak internals: %q", err.Error())
+	}
+}
+
+func TestValidateValue_BoolCleanError(t *testing.T) {
+	entry := schemaEntry{Long: "flag", Type: "bool"}
+	err := validateValue(entry, "maybe")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "must be a valid boolean") {
+		t.Errorf("expected clean error, got: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "strconv") {
+		t.Errorf("error must not leak strconv: %q", err.Error())
+	}
+}
+
+func TestParseArgs_ListImplicitMaxItems(t *testing.T) {
+	schema, _ := parseSchema("long=tags;type=list;")
+	args := make([]string, 101)
+	for i := range args {
+		args[i] = "--tags=x"
+	}
+	_, errs := parseArgs(args, schema)
+	if len(errs) == 0 {
+		t.Fatal("expected error for exceeding implicit maxItems=100")
+	}
+}
+
+func TestParseArgs_ListImplicitMaxItemsOverride(t *testing.T) {
+	schema, _ := parseSchema("long=tags;type=list;maxItems=200;")
+	args := make([]string, 101)
+	for i := range args {
+		args[i] = "--tags=x"
+	}
+	_, errs := parseArgs(args, schema)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected error with explicit maxItems=200: %v", errs)
+	}
+}
+
+func TestParseArgs_ListRequiredImplicitMinItems(t *testing.T) {
+	var buf strings.Builder
+	err := Run([]string{"shopts", "long=tags;type=list;required=true;"}, &buf)
+	if err == nil {
+		t.Fatal("expected error for required list with zero items")
 	}
 }

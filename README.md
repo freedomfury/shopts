@@ -2,12 +2,34 @@
 
 [![CI](https://github.com/freedomfury/shopts/actions/workflows/ci.yml/badge.svg)](https://github.com/freedomfury/shopts/actions/workflows/ci.yml)
 
-`shopts` is a schema-driven Go CLI parser that reads an inline schema definition,
-validates and pairs provided arguments, and emits shell-safe output as `KEY\0VALUE\n` records.
-
-This project also includes Bash scripts for test automation and benchmarking support, plus a Bash reference parser for comparison.
+`shopts` is a schema-driven CLI argument parser for Bash scripts. Define your options once in a simple text schema, and `shopts` handles parsing, validation, help text, and shell-safe output — so you don't have to.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## Why?
+
+Parsing command-line arguments in Bash is tedious and error-prone. The typical approach is a hand-rolled `while/case/shift` loop that grows with every new option, has no validation, and must be rewritten for every script. `getopts` helps with simple flags, but falls short the moment you need required options, type checking, enums, pattern validation, or repeatable arguments.
+
+`shopts` replaces all of that with a single binary and a schema string:
+
+```bash
+# Instead of 40+ lines of case/shift boilerplate:
+SCHEMA='
+short=u;long=user;required=true;type=string;minLength=3;help=Username;
+short=p;long=port;type=int;default=8080;help=Port number;
+short=v;long=verbose;type=flag;help=Enable verbose output;
+'
+
+while IFS= read -r -d $'\0' key && IFS= read -r val; do
+  printf -v "$key" '%s' "$val"
+done < <(shopts "$SCHEMA" "$@")
+```
+
+That's it. Arguments are parsed, validated, type-checked, and exported as shell variables. If anything is wrong — missing required option, bad type, value too short — `shopts` prints a clear error and exits non-zero. Pass `-h` and your users get auto-generated help text derived from the schema.
+
+**No `eval`. No subshells. No dependencies.** Output uses NUL-delimited records (`KEY\0VALUE\n`), which are safe to consume in Bash without worrying about spaces, quotes, or injection.
+
+For comparison, see [bench/bash-parser.sh](bench/bash-parser.sh) — a hand-written Bash implementation of the same logic. Most of that file is the boilerplate argument-parsing code that `shopts` eliminates.
 
 ## Features
 
@@ -59,6 +81,8 @@ short=t;long=tags;type=list;minItems=1;maxItems=5;
 - `--` terminates options and disallows trailing positional args.
 - `-abc` bundles are not supported; only single-letter short options.
 - Unknown options and invalid schemas produce stderr errors and exit code 1.
+- Multiple unknown options and validation errors are all reported together in a single error message rather than failing on the first one.
+- Type error messages are human-readable (e.g. `must be a valid integer`) with no Go stdlib internals exposed.
 
 ## Project Structure
 
@@ -70,25 +94,51 @@ short=t;long=tags;type=list;minItems=1;maxItems=5;
 
 There is no separate `benchmark/` folder; the benchmark helpers live in `bench/`.
 
+## Schema types
+
+| Type | Accepts value? | Repeatable? | Notes |
+|---|---|---|---|
+| `string` | Yes | No | Raw string; supports `minLength`, `maxLength`, `pattern` |
+| `int` | Yes | No | Must be a valid integer |
+| `float` | Yes | No | Must be a valid floating-point number |
+| `bool` | Yes | No | Must be explicit `true` or `false` (or `1`/`0`/`yes`/`no`) |
+| `enum` | Yes | No | Must be one of the values declared in the `enum` field |
+| `flag` | No | No | Boolean switch; presence sets true, absence sets false |
+| `list` | Yes | **Yes** | Pass the option multiple times; all values collected as strings and joined with `GO_SHOPTS_LIST_DELIM`. Default maxItems=100, no per-item type validation |
+
+**`flag` vs `bool`**: `flag` requires no value (`-v` sets true). `bool` requires an explicit value (`-b true`).
+
+**`list` item types**: All list values are stored as strings regardless of content. There is no per-item type validation.
+
+**`list` implicit constraints**: If `maxItems` is not set, defaults to 100. If `required=true` and `minItems` is not set, defaults to 1.
+
 ## Schema fields
 
-- `long` (required): long option name, allowed `[A-Za-z0-9_-]+`
-- `short` (optional): single alphanumeric short option
-- `required`: `true|false`
-- `type`: `string`, `int`, `float`, `bool`, `enum`, `list`, `flag`
-- `help`, `description`, `default`, `pattern`, `failure`
-- `enum`: comma-separated enum values (required for `enum`, forbidden for others)
-- `minLength`, `maxLength` (string types)
-- `minItems`, `maxItems` (`list` type only)
+| Field | Applies to | Description |
+|---|---|---|
+| `long` | All | Long option name, required. Allowed chars: `[A-Za-z0-9_-]+` |
+| `short` | All | Single alphanumeric short option (optional) |
+| `required` | All | `true\|false` — option must be provided |
+| `type` | All | One of: `string`, `int`, `float`, `bool`, `enum`, `list`, `flag` |
+| `help` | All | Short help text shown in usage output |
+| `description` | All | Extended description shown in usage output |
+| `default` | All | Default value if option is not provided (mutually exclusive with `required`) |
+| `pattern` | `string` | Regex the value must match |
+| `failure` | `string` | Human-readable message shown when `pattern` fails |
+| `enum` | `enum` | Comma-separated list of allowed values (required for `enum` type) |
+| `minLength` | `string` | Minimum character length |
+| `maxLength` | `string` | Maximum character length |
+| `minItems` | `list` | Minimum number of values (default: 1 when `required=true`, else 0) |
+| `maxItems` | `list` | Maximum number of values (default: 100) |
 
 ## Validation rules
 
 - `required` and `default` are mutually exclusive.
 - `enum` requires `type=enum`.
-- `flag` rejects `minLength/maxLength/pattern/enum`.
-- `int`, `float`, `bool` reject `minLength/maxLength/pattern`.
+- `flag` rejects `minLength`/`maxLength`/`pattern`/`enum`.
+- `int`, `float`, `bool` reject `minLength`/`maxLength`/`pattern`.
 - `minLength <= maxLength`, `minItems <= maxItems`.
-- Validate defaults at schema parse time.
+- Defaults are validated at schema parse time.
 
 ## Output behavior
 
@@ -108,9 +158,9 @@ There is no separate `benchmark/` folder; the benchmark helpers live in `bench/`
 
 ```bash
 export GO_SHOPTS_UPCASE=1
-SCHEMA='\
-short=u;long=user;required=true;type=string;help=User;\
-short=v;long=verbose;type=flag;help=Verbose;\
+SCHEMA='
+short=u;long=user;required=true;type=string;help=User;
+short=v;long=verbose;type=flag;help=Verbose;
 '
 
 while IFS= read -r -d $'\0' k && IFS= read -r v; do
