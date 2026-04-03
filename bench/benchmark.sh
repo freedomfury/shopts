@@ -16,13 +16,17 @@ SCHEMA="$1"
 shift
 ARGS=("$@")
 
-echo "Running go-getopt ${N} times..."
+SHOPTS_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null && pwd)/bin/shopts"
+
+echo "Running shopts ${N} times..."
 start_ns=$(date +%s%N)
-for i in $(seq 1 "${N}"); do
-    go-getopt "${SCHEMA}" "${ARGS[@]}" >/dev/null 2>&1 || {
+for ((i = 1; i <= N; i++)); do
+    "${SHOPTS_BIN}" "${SCHEMA}" "${ARGS[@]}" >/dev/null 2>&1 || {
         echo "iteration ${i}: failure"
         exit 1
     }
+
+done
 
 end_ns=$(date +%s%N)
 elapsed_ns=$((end_ns - start_ns))

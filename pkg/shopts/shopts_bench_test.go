@@ -67,11 +67,6 @@ func BenchmarkValidateValue(b *testing.B) {
 }
 
 func BenchmarkFullRun(b *testing.B) {
-	// build argv like main would
-	argv := make([]string, 0, 2+len(benchArgs))
-	argv = append(argv, "go-getopt", benchSchema)
-	argv = append(argv, benchArgs...)
-
 	// silence stdout to avoid noise and I/O interference
 	origStdout := os.Stdout
 	devNull, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)

@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate release version
+        run: |
+          version_file=$(tr -d '[:space:]' < VERSION)
+          tag_version=${GITHUB_REF_NAME#v}
+
+          if [[ "${version_file}" != "${tag_version}" ]]; then
+            echo "::error::VERSION (${version_file}) does not match tag (${tag_version})"
+            exit 1
+          fi
+
+      - name: Check main is stable
+        id: find-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list \
+            --branch main \
+            --workflow ci.yml \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+
+          if [[ -z "${run_id}" || "${run_id}" == "null" ]]; then
+            echo "::error::Latest main build is not stable -- cannot release"
+            exit 1
+          fi
+
+          echo "Found successful main run: ${run_id}"
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh run download "${{ steps.find-run.outputs.run_id }}" \
+            --name shopts-linux-amd64 \
+            --dir dist
+
+      - name: Verify artifact exists
+        run: |
+          if [[ ! -f dist/shopts-linux-amd64 ]]; then
+            echo "::error::Binary not found in downloaded artifact"
+            exit 1
+          fi
+          if [[ ! -f dist/SHA256SUMS ]]; then
+            echo "::error::SHA256SUMS not found in downloaded artifact"
+            exit 1
+          fi
+          echo "Artifact contents:"
+          ls -la dist/
+          echo "Checksum:"
+          cat dist/SHA256SUMS
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/shopts-linux-amd64 \
+            dist/SHA256SUMS \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

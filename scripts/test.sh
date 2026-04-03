@@ -10,15 +10,15 @@ short=m;long=mode;required=false;type=enum;enum=dev,prod;default=dev;help=Execut
 short=c;long=config;required=false;type=string;help=Path to configuration file;default=/etc/app/config.yaml;
 '
 
-binary=bin/shops
+binary=bin/shopts
 if [[ ! -x "${binary}" ]]; then
-  go build -o "${binary}" cmd/shops
+  go build -o "${binary}" ./cmd/shopts
 fi
 
-export GO_GETOPT_UPCASE=1
+export GO_SHOPTS_UPCASE=1
 while IFS= read -r -d $'\0' k && IFS= read -r v; do
   printf -v "${k}" '%s' "${v}"
-  declare -xr "${k#GO_GETOPT_}"="${v}"
+  declare -xr "${k#GO_SHOPTS_}"="${v}"
 done < <("${binary}" "${SCHEMA}" -u alice -p s3cret -v)
 
 printf 'USERNAME=%s\n' "${USERNAME}"

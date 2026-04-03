@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: shellcheck scripts/*.sh bench/*.sh
+
+      - name: Run Go tests
+        run: go test -race ./...
+
+      - name: Run bash test scripts
+        run: |
+          ./scripts/test.sh
+          ./scripts/test-negative.sh
+          ./scripts/test-extensive.sh
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          args: ./...
+
+  build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release binary
+        run: |
+          mkdir -p dist
+          version_file=$(tr -d '[:space:]' < VERSION)
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-X main.version=v${version_file}" \
+            -o dist/shopts-linux-amd64 ./cmd/shopts
+
+      - name: Generate checksums
+        run: sha256sum dist/shopts-linux-amd64 > dist/SHA256SUMS
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopts-linux-amd64
+          path: |
+            dist/shopts-linux-amd64
+            dist/SHA256SUMS
+          retention-days: 90

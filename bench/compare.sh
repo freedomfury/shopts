@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Compare performance of the Go parser (`go-getopt`) vs the Bash parser
+# Compare performance of the Go parser (`shopts`) vs the Bash parser
 # Usage: bench/compare.sh N [ARGS...]
 # Runs each parser N times with the same args and reports timings.
 
@@ -13,11 +13,11 @@ fi
 N="$1"
 shift
 
-GO_GETOPT_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null && pwd)/go-getopt"
+SHOPTS_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null && pwd)/bin/shopts"
 BASH_PARSER="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)/bash-parser.sh"
 
-if [[ ! -x "${GO_GETOPT_BIN}" ]]; then
-    printf 'FATAL: go-getopt not found or not executable at %s\n' "${GO_GETOPT_BIN}" >&2
+if [[ ! -x "${SHOPTS_BIN}" ]]; then
+    printf 'FATAL: shopts not found or not executable at %s\n' "${SHOPTS_BIN}" >&2
     exit 2
 fi
 
@@ -62,7 +62,7 @@ run_n() {
 echo "Running benchmarks with N=${N}"
 
 echo "-> Go parser"
-run_n "go-getopt" "${GO_GETOPT_BIN}" "${SCHEMA}" "${ARGS[@]}"
+run_n "shopts" "${SHOPTS_BIN}" "${SCHEMA}" "${ARGS[@]}"
 
 echo "-> Bash parser"
 run_n "bash-parser" "${BASH_PARSER}" "${ARGS[@]}"

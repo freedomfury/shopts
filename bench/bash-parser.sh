@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-prefix="${GO_GETOPT_PREFIX:-GO_GETOPT_}"
-list_delim="${GO_GETOPT_LIST_DELIM:-,}"
-upcase="${GO_GETOPT_UPCASE:-}"
+prefix="${GO_SHOPTS_PREFIX:-GO_SHOPTS_}"
+list_delim="${GO_SHOPTS_LIST_DELIM:-,}"
+upcase="${GO_SHOPTS_UPCASE:-}"
 
 usage() {
     cat <<USAGE
@@ -41,10 +41,6 @@ while [ $# -gt 0 ]; do
     --user)
         _user="$2"
         shift 2
-        ;;
-    -u=*)
-        _user="${1#*=}"
-        shift
         ;;
     -u=*)
         _user="${1#*=}"

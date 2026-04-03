@@ -3,23 +3,16 @@ package shopts
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-const DefaultPrefix = "GO_GETOPT_"
-
-var prefix = DefaultPrefix
+const DefaultPrefix = "GO_SHOPTS_"
 
 var bashVarRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-func init() {
-	if p, ok := os.LookupEnv("GO_GETOPT_PREFIX"); ok {
-		prefix = p
-	}
-}
 
 func humanType(value string) string {
 	switch value {
@@ -42,12 +35,20 @@ func humanType(value string) string {
 	}
 }
 
-func Run(argv []string) error {
+func Run(argv []string, w io.Writer) error {
 	if len(argv) < 2 {
-		return errors.New("usage: go-shopts SCHEMA [ARGS...]")
+		return errors.New("usage: shopts SCHEMA [ARGS...]")
 	}
 
-	useUpcase := getenvBool("GO_GETOPT_UPCASE")
+	currentPrefix := DefaultPrefix
+	if p, ok := os.LookupEnv("GO_SHOPTS_PREFIX"); ok {
+		currentPrefix = p
+	}
+	if currentPrefix != "" && !bashVarRE.MatchString(currentPrefix) {
+		return fmt.Errorf("GO_SHOPTS_PREFIX %q is not a valid shell variable prefix", currentPrefix)
+	}
+
+	useUpcase := getenvBool("GO_SHOPTS_UPCASE")
 	schemaText := argv[1]
 	args := argv[2:]
 
@@ -57,8 +58,7 @@ func Run(argv []string) error {
 	}
 
 	if wantsHelp(args) {
-		printUsage(schema)
-		return nil
+		return printUsage(w, schema)
 	}
 
 	values, err := parseArgs(args, schema)
@@ -76,11 +76,13 @@ func Run(argv []string) error {
 		if !emit {
 			continue
 		}
-		outName, err := shVarName(entry.Long, useUpcase)
+		outName, err := shVarName(entry.Long, currentPrefix, useUpcase)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s\x00%s\n", outName, val)
+		if _, err := fmt.Fprintf(w, "%s\x00%s\n", outName, val); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -268,6 +270,9 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 				return nil, fmt.Errorf("option %q: flag cannot declare string validation fields", e.Long)
 			}
 		}
+		if (e.Type == "int" || e.Type == "float" || e.Type == "bool") && (e.MinLength != nil || e.MaxLength != nil || e.Pattern != "") {
+			return nil, fmt.Errorf("option %q: %s type cannot use minLength, maxLength, or pattern", e.Long, e.Type)
+		}
 		if e.Type == "enum" && len(e.Enum) == 0 {
 			return nil, fmt.Errorf("option %q: enum type must declare enum values", e.Long)
 		}
@@ -385,7 +390,7 @@ func splitFields(line string) ([]string, error) {
 			esc = false
 			continue
 		}
-		if b == '\\' {
+		if inQuotes && b == '\\' {
 			esc = true
 			continue
 		}
@@ -484,7 +489,7 @@ func parseArgs(args []string, schema []schemaEntry) (map[string]string, error) {
 		}
 	}
 
-	delim := os.Getenv("GO_GETOPT_LIST_DELIM")
+	delim := os.Getenv("GO_SHOPTS_LIST_DELIM")
 	if delim == "" {
 		delim = ","
 	}
@@ -566,7 +571,7 @@ func validateParsedValues(schema []schemaEntry, values map[string]string) []stri
 	var problems []string
 	for _, entry := range schema {
 		val, ok := values[entry.Long]
-		if !ok {
+		if !ok || (entry.Required && val == "") {
 			if entry.Required {
 				problems = append(problems, fmt.Sprintf("missing required option %q", displayName(entry)))
 			}
@@ -657,32 +662,54 @@ func wantsHelp(args []string) bool {
 	return false
 }
 
-func printUsage(schema []schemaEntry) {
-	fmt.Println("Usage: go-shopts SCHEMA [OPTIONS]")
-	fmt.Println()
-	fmt.Println("Options:")
+// errWriter wraps an io.Writer and captures the first write error so callers
+// can check once at the end rather than after every individual write.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (ew *errWriter) println(args ...any) {
+	if ew.err == nil {
+		_, ew.err = fmt.Fprintln(ew.w, args...)
+	}
+}
+
+func (ew *errWriter) printf(format string, args ...any) {
+	if ew.err == nil {
+		_, ew.err = fmt.Fprintf(ew.w, format, args...)
+	}
+}
+
+func printUsage(w io.Writer, schema []schemaEntry) error {
+	ew := &errWriter{w: w}
+	ew.println("Usage: shopts SCHEMA [OPTIONS]")
+	ew.println()
+	ew.println("Options:")
 	for _, entry := range schema {
-		fmt.Printf("  %-24s %s\n", usageLabel(entry), usageSummary(entry))
+		ew.printf("  %-24s %s\n", usageLabel(entry), usageSummary(entry))
 		if entry.Description != "" {
 			for _, line := range strings.Split(entry.Description, "\n") {
 				line = strings.TrimSpace(line)
 				if line == "" {
 					continue
 				}
-				fmt.Printf("  %-24s %s\n", "", line)
+				ew.printf("  %-24s %s\n", "", line)
 			}
 		}
 	}
-	fmt.Println("  -h, --help               Show schema-derived usage and exit")
-	fmt.Println()
-	fmt.Println("Environment variables:")
-	fmt.Println("  GO_GETOPT_UPCASE=1       Output variable names in uppercase")
-	fmt.Println("  GO_GETOPT_LIST_DELIM=,   Delimiter for list-type options (default: ',')")
-	fmt.Println("  GO_GETOPT_PREFIX=X_      Override output variable prefix (default: 'GO_GETOPT_')")
-	fmt.Println()
-	fmt.Println("Type notes:")
-	fmt.Println("  int, float, bool: parsed and validated as native Go types")
-	fmt.Println("  list: option may be repeated, values joined by delimiter")
+	ew.println("  -h, --help               Show schema-derived usage and exit")
+	ew.println("  -V, --version            Print version and exit")
+	ew.println()
+	ew.println("Environment variables:")
+	ew.println("  GO_SHOPTS_UPCASE=1       Output variable names in uppercase")
+	ew.println("  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')")
+	ew.println("  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'GO_SHOPTS_')")
+	ew.println()
+	ew.println("Type notes:")
+	ew.println("  int, float, bool: parsed and validated as native Go types")
+	ew.println("  list: option may be repeated, values joined by delimiter")
+	return ew.err
 }
 
 func usageLabel(entry schemaEntry) string {
@@ -747,7 +774,7 @@ func getenvBool(name string) bool {
 	return v == "1" || v == "true" || v == "yes"
 }
 
-func shVarName(long string, upcase bool) (string, error) {
+func shVarName(long, prefix string, upcase bool) (string, error) {
 	if long == "" {
 		return "", errors.New("empty long name")
 	}

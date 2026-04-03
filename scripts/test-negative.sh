@@ -18,14 +18,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-binary=bin/shops
+binary=bin/shopts
 if [[ ! -x "${binary}" ]]; then
-  go build -o "${binary}" cmd/shops
+  go build -o "${binary}" ./cmd/shopts
 fi
 
 "${binary}" "${SCHEMA}" --help >"${help_out}"
 cat >"${help_expected}" <<'EOF'
-Usage: go-getopt SCHEMA [OPTIONS]
+Usage: shopts SCHEMA [OPTIONS]
 
 Options:
   -u, --username <value>   Username for login; string; required; minimum length: 3
@@ -34,11 +34,12 @@ Options:
   -v, --verbose            Enable verbose output; flag (boolean switch)
   -m, --mode <value>       Execution mode; enum; default: dev; allowed: dev, prod
   -h, --help               Show schema-derived usage and exit
+  -V, --version            Print version and exit
 
 Environment variables:
-  GO_GETOPT_UPCASE=1       Output variable names in uppercase
-  GO_GETOPT_LIST_DELIM=,   Delimiter for list-type options (default: ',')
-  GO_GETOPT_PREFIX=X_      Override output variable prefix (default: 'GO_GETOPT_')
+  GO_SHOPTS_UPCASE=1       Output variable names in uppercase
+  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')
+  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'GO_SHOPTS_')
 
 Type notes:
   int, float, bool: parsed and validated as native Go types
