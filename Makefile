@@ -7,7 +7,7 @@ N       := 100
 all: test
 
 $(BINARY): $(shell find ./cmd ./pkg -name '*.go') go.mod go.sum
-	go build -ldflags "-X main.version=v$(VERSION)" -o $(BINARY) ./cmd/shopts
+	go build -ldflags "-X main.version=v$(VERSION) -s -w" -trimpath -o $(BINARY) ./cmd/shopts
 
 build: $(BINARY)
 
