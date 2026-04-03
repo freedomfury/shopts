@@ -5,6 +5,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.0.4] - 2026-04-03
+
+### Fixed
+- CI release build now includes `-s -w` ldflags to strip symbols and debug info, keeping release binaries at ~1.8 MB instead of ~3 MB.
+- Release workflow now verifies CI has passed for the specific tagged commit, not just any successful main run.
+
+---
+
 ## [0.0.3] - 2026-04-03
 
 ### Changed
@@ -15,8 +23,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - `bool` errors now say `must be a valid boolean`
 - Parse errors and validation errors are merged and reported together at end of a run.
 - `dedent` now strips both leading spaces and tabs, so tab-indented heredocs work correctly.
-
----
 
 ---
 

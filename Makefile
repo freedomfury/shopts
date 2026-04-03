@@ -48,6 +48,6 @@ tag:
 		echo "Error: Tag v$(VERSION) already exists on remote"; \
 		exit 1; \
 	fi
-	@echo "Tagging v$(VERSION)"
+	@echo "Creating and pushing tag v$(VERSION)"
 	git tag v$(VERSION)
 	git push origin v$(VERSION)

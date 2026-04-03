@@ -75,7 +75,7 @@ jobs:
           mkdir -p dist
           version_file=$(tr -d '[:space:]' < VERSION)
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
-            -ldflags "-X main.version=v${version_file}" \
+            -ldflags "-X main.version=v${version_file} -s -w" \
             -o dist/shopts-linux-amd64 ./cmd/shopts
 
       - name: Generate checksums
