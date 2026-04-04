@@ -3,6 +3,19 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.7] - 2026-04-04
+
+### Changed
+- Release scripts extracted from Makefile into `bin/release.sh`, `bin/tag.sh`, and `bin/clean-tag.sh` to reduce Makefile complexity.
+- `make release` now validates version format, changelog entry, and remote state before running lint and tests, failing fast on quick checks.
+- `make tag` now checks for a passing CI run on the tagged commit before pushing, matching the requirement enforced by the release workflow.
+
+### Added
+- `make clean-tag` — removes a tag from both local and remote, useful for re-triggering a failed release workflow.
+- `RELEASE.md` — documents the step-by-step release process.
+
+---
+
 ## [0.0.6] - 2026-04-04
 
 ### Breaking Changes

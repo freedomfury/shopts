@@ -2,7 +2,7 @@ VERSION := $(shell cat VERSION)
 BINARY  := bin/shopts
 N       := 100
 
-.PHONY: all clean test test-go test-bash benchmark compare lint tag release
+.PHONY: all clean test test-go test-bash benchmark compare lint tag clean-tag release
 
 all: test
 
@@ -37,55 +37,11 @@ compare: $(BINARY)
 
 tag: TAG_VERSION ?= $(VERSION)
 tag:
-	@if [ -z "$(TAG_VERSION)" ]; then \
-		echo "Error: TAG_VERSION not specified"; \
-		exit 1; \
-	fi
-	@echo "Validating version: v$(TAG_VERSION)"
-	@if ! echo "$(TAG_VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
-		echo "Error: TAG_VERSION is not in semver format (major.minor.patch)"; \
-		exit 1; \
-	fi
-	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$BRANCH" != "main" ]; then \
-		echo "Error: Not on main branch (current: $$BRANCH)"; \
-		exit 1; \
-	fi
-	@git fetch origin --prune-tags --prune
-	@if git ls-remote origin refs/tags/v$(TAG_VERSION) | grep -q .; then \
-		echo "WARNING: Tag v$(TAG_VERSION) already exists on remote"; \
-		exit 0; \
-	fi
-	@echo "Creating and pushing tag v$(TAG_VERSION)"
-	git tag -f v$(TAG_VERSION)
-	git push origin v$(TAG_VERSION)
+	@bin/tag.sh $(TAG_VERSION)
 
-release: lint test
-	@echo "Validating version: v$(VERSION)"
-	@if ! echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
-		echo "Error: VERSION is not in semver format (major.minor.patch)"; \
-		exit 1; \
-	fi
-	@if ! grep -q "## \[$(VERSION)\]" CHANGELOG.md; then \
-		echo "Error: No entry for [$(VERSION)] found in CHANGELOG.md"; \
-		exit 1; \
-	fi
-	@git fetch origin --prune-tags --prune
-	@if git log --oneline --grep="Release: $(VERSION)" -1 | grep -q .; then \
-		echo "WARNING: Release $(VERSION) was already committed"; \
-		exit 0; \
-	fi
-	@if git ls-remote origin refs/tags/v$(VERSION) | grep -q .; then \
-		echo "WARNING: Release v$(VERSION) already exists on remote"; \
-		exit 0; \
-	fi
-	@if [ -z "$$(git status --porcelain)" ]; then \
-		echo "WARNING: No changes to commit for v$(VERSION)"; \
-	else \
-		echo "Staging all changes"; \
-		git add -A; \
-		echo "Committing release $(VERSION)"; \
-		git commit -m "Release: $(VERSION)"; \
-	fi
-	@echo "Pushing to origin"
-	git push origin main
+clean-tag: TAG_VERSION ?= $(VERSION)
+clean-tag:
+	@bin/clean-tag.sh $(TAG_VERSION)
+
+release:
+	@bin/release.sh $(VERSION)
