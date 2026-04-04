@@ -3,6 +3,14 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.11] - 2026-04-04
+
+### Changed
+- Release process documentation clarified: all development work must be committed before release, lint and test must pass before writing changelog, `make test-all` now used for complete test coverage.
+- `bin/release.sh`: removed internal `make lint test` calls; lint and test are now explicit pre-steps in the manual release workflow.
+
+---
+
 ## [0.0.10] - 2026-04-04
 
 ### Added
