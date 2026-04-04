@@ -9,15 +9,18 @@
    ## [0.0.7] - YYYY-MM-DD
    ```
 
-3. **Run `make release`** — validates the version and changelog entry, checks that the
-   release doesn't already exist on the remote, then runs lint and tests, commits all
-   changes, and pushes to `main`.
+3. **Run `make lint-all`** — runs all linters across the codebase.
 
-4. **Wait for CI to pass** — the release workflow requires a successful CI run for the
+4. **Run `make test`** — runs the full test suite.
+
+5. **Run `make release`** — validates the version and changelog entry, checks that the
+   release doesn't already exist on the remote, commits all changes, and pushes to `main`.
+
+6. **Wait for CI to pass** — the release workflow requires a successful CI run for the
    tagged commit. Check the Actions tab or run:
    ```
    gh run list --workflow ci.yml --limit 5
    ```
 
-5. **Run `make tag`** — creates and pushes the `vX.Y.Z` tag, which triggers the release
+7. **Run `make tag`** — creates and pushes the `vX.Y.Z` tag, which triggers the release
    workflow to build and publish the GitHub release.

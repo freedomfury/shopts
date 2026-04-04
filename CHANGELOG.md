@@ -3,6 +3,24 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.10] - 2026-04-04
+
+### Added
+- End-to-end test suite: 22 deterministic test cases in `scripts/test-e2e/` covering valid and invalid CLI argument scenarios.
+- `scripts/run-e2e-tests.sh`: parallel E2E test runner.
+- `scripts/TEST.md`: documentation for the E2E test suite.
+- `make test-e2e` target: runs the E2E test suite against the built binary.
+- `make test-all` target: runs `test-go` and `test-bash` in parallel, then `test-e2e` sequentially.
+- `make lint-go` target: runs `golangci-lint` across all Go packages.
+- `make lint-bash` target: runs `shellcheck` across all bash scripts.
+- `make lint-all` target: runs `lint-bash` and `lint-go` in parallel.
+
+### Changed
+- `make lint` now runs `lint-bash` and `lint-go` as explicit dependencies.
+- Release process updated: explicit `make lint-all` and `make test` steps added before `make release`.
+
+---
+
 ## [0.0.9] - 2026-04-04
 
 ### Breaking Changes
