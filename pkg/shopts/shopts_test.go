@@ -124,6 +124,29 @@ func TestParseSchema_DuplicateLong(t *testing.T) {
 	}
 }
 
+func TestParseSchema_ReservedNames(t *testing.T) {
+	cases := []struct {
+		name   string
+		schema string
+	}{
+		{"long=help", "long=help, type=flag;"},
+		{"long=version", "long=version, type=flag;"},
+		{"short=H", "short=H, long=foo, type=flag;"},
+		{"short=V", "short=V, long=foo, type=flag;"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseSchema(tc.schema)
+			if err == nil {
+				t.Fatalf("expected error for reserved name %q", tc.name)
+			}
+			if !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("expected 'reserved' in error, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestParseSchema_RequiredWithDefault(t *testing.T) {
 	_, err := parseSchema("long=foo, type=string, required=true, default=bar;")
 	if err == nil {
@@ -644,14 +667,17 @@ func TestParseSchema_EmptyEnumItem(t *testing.T) {
 }
 
 func TestWantsHelp(t *testing.T) {
-	if !wantsHelp([]string{"-h"}) {
-		t.Fatal("expected true for -h")
+	if !wantsHelp([]string{"-H"}) {
+		t.Fatal("expected true for -H")
 	}
 	if !wantsHelp([]string{"--help"}) {
 		t.Fatal("expected true for --help")
 	}
 	if wantsHelp([]string{"--name=x"}) {
 		t.Fatal("expected false")
+	}
+	if wantsHelp([]string{"-h"}) {
+		t.Fatal("expected false for -h (not reserved)")
 	}
 }
 

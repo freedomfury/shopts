@@ -33,7 +33,7 @@ printf "User: %s\n" "$SHOPTS_USER"
 printf "Port: %d\n" "$SHOPTS_PORT"
 ```
 
-That's it. Arguments are parsed, validated, type-checked, and exported as shell variables. If anything is wrong — missing required option, bad type, value too short — `shopts` prints a clear error and exits non-zero. Pass `-h` and your users get auto-generated help text derived from the schema.
+That's it. Arguments are parsed, validated, type-checked, and exported as shell variables. If anything is wrong — missing required option, bad type, value too short — `shopts` prints a clear error and exits non-zero. Pass `-H` and your users get auto-generated help text derived from the schema.
 
 **No `eval`. No subshells. No dependencies.** Output uses tab-delimited records (`KEY\tVALUE\n`), which are safe to consume in Bash without worrying about spaces, quotes, or injection.
 
@@ -48,7 +48,8 @@ For comparison, see [bench/bash-parser.sh](bench/bash-parser.sh) — a hand-writ
 - `list` type support (repeatable option values joined with `GO_SHOPTS_LIST_DELIM`).
 - Environment-controlled output naming: `GO_SHOPTS_PREFIX`, `GO_SHOPTS_UPCASE`.
 - Reserved namespace: `GO_SHOPTS_` prefix is owned by the binary; `GO_SHOPTS_PREFIX` must not start with `GO_SHOPTS_`.
-- `-h`/`--help` for schema-derived usage text.
+- `-H`/`--help` for schema-derived usage text.
+- Reserved built-ins: `-H`/`--help` and `-V`/`--version` are always available; schemas declaring `short=H`, `short=V`, `long=help`, or `long=version` are rejected at parse time (exit 2).
 - No shell eval; output is intended for safe `IFS=$'\t' read -r` consumer patterns.
 
 ## Usage
@@ -209,9 +210,11 @@ An unknown name is a schema error (exit 2). The optional `failure=` field overri
 
 ## Help
 
-`-h` or `--help` prints schema-derived usage and exits 0.
+`-H` or `--help` prints schema-derived usage and exits 0.
 
 `-V` or `--version` prints the version and exits 0.
+
+Both are reserved: schemas that declare `long=help`, `long=version`, `short=H`, or `short=V` are rejected at parse time with exit code 2. This frees `-h` for your own use (e.g. `short=h, long=host`).
 
 ## Testing
 

@@ -33,7 +33,7 @@ Options:
   -p, --pass <value>       Password for login; string; required; minimum length: 6
   -v, --verbose            Enable verbose output; flag (boolean switch)
   -m, --mode <value>       Execution mode; enum; default: dev; allowed: dev, prod
-  -h, --help               Show schema-derived usage and exit
+  -H, --help               Show schema-derived usage and exit
   -V, --version            Print version and exit
 
 Environment variables:
@@ -63,7 +63,7 @@ Options:
   -p, --pass <value>       Password for login; string; required; minimum length: 6
   -v, --verbose            Enable verbose output; flag (boolean switch)
   -m, --mode <value>       Execution mode; enum; default: dev; allowed: dev, prod
-  -h, --help               Show schema-derived usage and exit
+  -H, --help               Show schema-derived usage and exit
   -V, --version            Print version and exit
 
 Environment variables:

@@ -289,9 +289,21 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 		default:
 			return nil, fmt.Errorf("option %q: invalid type %q", e.Long, e.Type)
 		}
+		if e.Long == "help" {
+			return nil, fmt.Errorf("option %q: long name %q is reserved", e.Long, e.Long)
+		}
+		if e.Long == "version" {
+			return nil, fmt.Errorf("option %q: long name %q is reserved", e.Long, e.Long)
+		}
 		if e.Short != "" {
 			if len(e.Short) != 1 || !isAlphanumeric(e.Short[0]) {
 				return nil, fmt.Errorf("option %q: short flag %q must be a single alphanumeric character", e.Long, e.Short)
+			}
+			if e.Short == "H" {
+				return nil, fmt.Errorf("option %q: short flag %q is reserved", e.Long, e.Short)
+			}
+			if e.Short == "V" {
+				return nil, fmt.Errorf("option %q: short flag %q is reserved", e.Long, e.Short)
 			}
 			if _, dup := seenShort[e.Short]; dup {
 				return nil, fmt.Errorf("duplicate short flag %q", e.Short)
@@ -823,7 +835,7 @@ func resolvedValue(entry schemaEntry, values map[string]string) (string, bool) {
 
 func wantsHelp(args []string) bool {
 	for _, arg := range args {
-		if arg == "-h" || arg == "--help" {
+		if arg == "-H" || arg == "--help" {
 			return true
 		}
 	}
@@ -866,7 +878,7 @@ func printUsage(w io.Writer, schema []schemaEntry) error {
 			}
 		}
 	}
-	ew.println("  -h, --help               Show schema-derived usage and exit")
+	ew.println("  -H, --help               Show schema-derived usage and exit")
 	ew.println("  -V, --version            Print version and exit")
 	ew.println()
 	ew.println("Environment variables:")

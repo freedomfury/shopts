@@ -3,6 +3,17 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.9] - 2026-04-04
+
+### Breaking Changes
+- Help flag changed from `-h` to `-H`. Scripts calling `-h` for help must be updated to `-H`.
+
+### Added
+- Reserved built-in flags: `short=H`, `short=V`, `long=help`, and `long=version` are now rejected at schema parse time (exit 2). This prevents silent shadowing of the built-in `-H`/`--help` and `-V`/`--version` flags.
+- `-h` is now available for use in schemas (e.g. `short=h, long=host`).
+
+---
+
 ## [0.0.8] - 2026-04-04
 
 ### Changed
