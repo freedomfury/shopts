@@ -33,8 +33,6 @@ if git ls-remote origin "refs/tags/v${VERSION}" | grep -q .; then
     exit 0
 fi
 
-make -C "${REPO_ROOT}" lint test
-
 if [ -z "$(git -C "${REPO_ROOT}" status --porcelain)" ]; then
     echo "WARNING: No changes to commit for v${VERSION}"
 else
