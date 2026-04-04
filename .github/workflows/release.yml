@@ -27,13 +27,17 @@ jobs:
             exit 1
           fi
 
-      - name: Check main is stable
+      - name: Check tagged commit has passing CI
         id: find-run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # GITHUB_SHA is the commit that the tag points to
+          tagged_commit="${GITHUB_SHA}"
+          echo "Checking CI for tagged commit: ${tagged_commit}"
+
           run_id=$(gh run list \
-            --branch main \
+            --commit "${tagged_commit}" \
             --workflow ci.yml \
             --status success \
             --limit 1 \
@@ -41,11 +45,12 @@ jobs:
             --jq '.[0].databaseId')
 
           if [[ -z "${run_id}" || "${run_id}" == "null" ]]; then
-            echo "::error::Latest main build is not stable -- cannot release"
+            echo "::error::No successful CI run found for tagged commit ${tagged_commit}"
+            echo "::error::Please ensure CI has passed for this commit before tagging."
             exit 1
           fi
 
-          echo "Found successful main run: ${run_id}"
+          echo "Found successful CI run: ${run_id}"
           echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
 
       - name: Download artifact

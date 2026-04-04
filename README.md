@@ -19,10 +19,18 @@ short=u;long=user;required=true;type=string;minLength=3;help=Username;
 short=p;long=port;type=int;default=8080;help=Port number;
 short=v;long=verbose;type=flag;help=Enable verbose output;
 '
+# Emits SHOPTS_<LONG> for each option (uppercase by default).
+# GO_SHOPTS_ is reserved for internal controls — your variables land in SHOPTS_.
 
 while IFS= read -r -d $'\0' key && IFS= read -r val; do
+  # Variables are assigned here as shopts streams them out.
   printf -v "$key" '%s' "$val"
 done < <(shopts "$SCHEMA" "$@")
+wait $! || exit $?  # propagate exit code: 2=schema error, 3=bad args
+
+# Variables are now set and ready to use.
+printf "User: %s\n" "$SHOPTS_USER"
+printf "Port: %d\n" "$SHOPTS_PORT"
 ```
 
 That's it. Arguments are parsed, validated, type-checked, and exported as shell variables. If anything is wrong — missing required option, bad type, value too short — `shopts` prints a clear error and exits non-zero. Pass `-h` and your users get auto-generated help text derived from the schema.
@@ -39,6 +47,7 @@ For comparison, see [bench/bash-parser.sh](bench/bash-parser.sh) — a hand-writ
 - `flag` type support (boolean switch that is true when present).
 - `list` type support (repeatable option values joined with `GO_SHOPTS_LIST_DELIM`).
 - Environment-controlled output naming: `GO_SHOPTS_PREFIX`, `GO_SHOPTS_UPCASE`.
+- Reserved namespace: `GO_SHOPTS_` prefix is owned by the binary; `GO_SHOPTS_PREFIX` must not start with `GO_SHOPTS_`.
 - `-h`/`--help` for schema-derived usage text.
 - No shell eval; output is intended for safe `read -d $'\0'` consumer patterns.
 
@@ -58,6 +67,7 @@ The schema is a text block containing one or more non-empty lines. Each line is
 semicolon-separated `key=value` pairs terminated by `;`.
 
 - each line defines one option
+- `long` is **required**; `short` is optional (primarily a convenience alias)
 - fields are `short`, `long`, `required`, `type`, `help`, etc.
 - optional quoting with Go-style string literals (for semicolons, commas, etc.)
 
@@ -81,6 +91,9 @@ short=t;long=tags;type=list;minItems=1;maxItems=5;
 - `--` terminates options and disallows trailing positional args.
 - `-abc` bundles are not supported; only single-letter short options.
 - Unknown options and invalid schemas produce stderr errors and exit code 1.
+- `GO_SHOPTS_UPCASE` defaults to `1` (default behavior is uppercase output variable names; set `GO_SHOPTS_UPCASE=0` to preserve legacy lowercase names).
+- `GO_SHOPTS_PREFIX` must not start with `GO_SHOPTS_` — that prefix is reserved for internal controls. Attempting to set it will produce an error (exit 1).
+- Exit codes: `1` general failure, `2` schema error (invalid schema), `3` parse/validation error (bad arguments).
 - Multiple unknown options and validation errors are all reported together in a single error message rather than failing on the first one.
 - Type error messages are human-readable (e.g. `must be a valid integer`) with no Go stdlib internals exposed.
 
@@ -143,34 +156,25 @@ There is no separate `benchmark/` folder; the benchmark helpers live in `bench/`
 ## Output behavior
 
 - Successful parse prints `KEY\0VALUE\n` for each emitted option.
-- `KEY` is generated as `GO_SHOPTS_<sanitized-long>` by default.
-- `GO_SHOPTS_UPCASE=1` uppercases the key name.
-- `GO_SHOPTS_PREFIX` overrides the prefix (must be a valid shell identifier prefix, or empty).
+- `KEY` is generated as `SHOPTS_<sanitized-long>` by default (uppercase).
+- `GO_SHOPTS_UPCASE=1` uppercases the key name (default on).
+- `GO_SHOPTS_PREFIX` overrides the prefix (must be a valid shell identifier prefix, or empty; must not start with `GO_SHOPTS_`).
 - `list` values are joined with `GO_SHOPTS_LIST_DELIM` (`,`, default).
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | General failure (bad prefix env var, write error, etc.) |
+| `2` | Schema error — invalid schema (developer bug) |
+| `3` | Parse/validation error — bad arguments (user input error) |
 
 ## Help
 
 `-h` or `--help` prints schema-derived usage and exits 0.
 
 `-V` or `--version` prints the version and exits 0.
-
-## Quick test snippet
-
-```bash
-export GO_SHOPTS_UPCASE=1
-SCHEMA='
-short=u;long=user;required=true;type=string;help=User;
-short=v;long=verbose;type=flag;help=Verbose;
-'
-
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
-  printf -v "$k" '%s' "$v"
-  declare -xr "${k#GO_SHOPTS_}"="$v"
-done < <(./shopts "$SCHEMA" -u alice -v)
-
-printf 'USER=%s\n' "$USER"
-printf 'VERBOSE=%s\n' "$VERBOSE"
-```
 
 ## Testing
 
@@ -225,7 +229,6 @@ Releases are tag-driven through GitHub Actions using a build-once, promote patte
 - Versioned via: `-X main.version=v{VERSION}` at build time
 - Published to: GitHub Releases with SHA256 checksum
 
-See `spec-releaseworkflow.md` for detailed architecture.
 
 ## Bash Reference Parser & Benchmarks
 

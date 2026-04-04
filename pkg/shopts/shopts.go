@@ -11,9 +11,19 @@ import (
 )
 
 const (
-	DefaultPrefix       = "GO_SHOPTS_"
+	DefaultPrefix       = "SHOPTS_"
 	listDefaultMaxItems = 100
 )
+
+// ExitError carries a specific exit code so main can exit with the right code.
+// Code 2 = schema error; Code 3 = arg-parse/validation error.
+// General failures (bad prefix env, write errors) are returned as plain errors (exit 1).
+type ExitError struct {
+	Code int
+	Err  error
+}
+
+func (e *ExitError) Error() string { return e.Err.Error() }
 
 var bashVarRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -38,7 +48,7 @@ func humanType(value string) string {
 	}
 }
 
-func Run(argv []string, w io.Writer) error {
+func Run(argv []string, stdout, stderr io.Writer) error {
 	if len(argv) < 2 {
 		return errors.New("usage: shopts SCHEMA [ARGS...]")
 	}
@@ -47,21 +57,28 @@ func Run(argv []string, w io.Writer) error {
 	if p, ok := os.LookupEnv("GO_SHOPTS_PREFIX"); ok {
 		currentPrefix = p
 	}
+	if strings.HasPrefix(currentPrefix, "GO_SHOPTS_") {
+		return fmt.Errorf("GO_SHOPTS_PREFIX %q must not start with GO_SHOPTS_ (reserved namespace)", currentPrefix)
+	}
 	if currentPrefix != "" && !bashVarRE.MatchString(currentPrefix) {
 		return fmt.Errorf("GO_SHOPTS_PREFIX %q is not a valid shell variable prefix", currentPrefix)
 	}
 
-	useUpcase := getenvBool("GO_SHOPTS_UPCASE")
+	useUpcase := true
+	if _, ok := os.LookupEnv("GO_SHOPTS_UPCASE"); ok {
+		useUpcase = getenvBool("GO_SHOPTS_UPCASE")
+	}
+
 	schemaText := argv[1]
 	args := argv[2:]
 
 	schema, err := parseSchema(schemaText)
 	if err != nil {
-		return err
+		return &ExitError{Code: 2, Err: err}
 	}
 
 	if wantsHelp(args) {
-		return printUsage(w, schema)
+		return printUsage(stderr, schema)
 	}
 
 	values, parseErrors := parseArgs(args, schema)
@@ -69,7 +86,9 @@ func Run(argv []string, w io.Writer) error {
 
 	allErrors := append(parseErrors, validationErrors...)
 	if len(allErrors) > 0 {
-		return errors.New(strings.Join(allErrors, "; "))
+		_ = printUsage(stderr, schema)
+		_, _ = fmt.Fprintln(stderr)
+		return &ExitError{Code: 3, Err: errors.New(strings.Join(allErrors, "; "))}
 	}
 
 	for _, entry := range schema {
@@ -81,7 +100,7 @@ func Run(argv []string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "%s\x00%s\n", outName, val); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s\x00%s\n", outName, val); err != nil {
 			return err
 		}
 	}
@@ -722,7 +741,7 @@ func printUsage(w io.Writer, schema []schemaEntry) error {
 	ew.println("Environment variables:")
 	ew.println("  GO_SHOPTS_UPCASE=1       Output variable names in uppercase")
 	ew.println("  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')")
-	ew.println("  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'GO_SHOPTS_')")
+	ew.println("  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'SHOPTS_')")
 	ew.println()
 	ew.println("Type notes:")
 	ew.println("  int, float, bool: parsed and validated as native Go types")

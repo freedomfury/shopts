@@ -23,7 +23,7 @@ if [[ ! -x "${binary}" ]]; then
   go build -o "${binary}" ./cmd/shopts
 fi
 
-"${binary}" "${SCHEMA}" --help >"${help_out}"
+"${binary}" "${SCHEMA}" --help 2>"${help_out}"
 cat >"${help_expected}" <<'EOF'
 Usage: shopts SCHEMA [OPTIONS]
 
@@ -39,7 +39,7 @@ Options:
 Environment variables:
   GO_SHOPTS_UPCASE=1       Output variable names in uppercase
   GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')
-  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'GO_SHOPTS_')
+  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'SHOPTS_')
 
 Type notes:
   int, float, bool: parsed and validated as native Go types
@@ -54,6 +54,26 @@ if "${binary}" "${SCHEMA}" -u al -p x >/dev/null 2>"${err_out}"; then
 fi
 
 cat >"${err_expected}" <<'EOF'
+Usage: shopts SCHEMA [OPTIONS]
+
+Options:
+  -u, --username <value>   Username for login; string; required; minimum length: 3
+                           The username to authenticate with the system.
+  -p, --pass <value>       Password for login; string; required; minimum length: 6
+  -v, --verbose            Enable verbose output; flag (boolean switch)
+  -m, --mode <value>       Execution mode; enum; default: dev; allowed: dev, prod
+  -h, --help               Show schema-derived usage and exit
+  -V, --version            Print version and exit
+
+Environment variables:
+  GO_SHOPTS_UPCASE=1       Output variable names in uppercase
+  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')
+  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'SHOPTS_')
+
+Type notes:
+  int, float, bool: parsed and validated as native Go types
+  list: option may be repeated, values joined by delimiter
+
 option "--username" invalid: must be at least 3 characters long; option "--pass" invalid: must be at least 6 characters long
 EOF
 

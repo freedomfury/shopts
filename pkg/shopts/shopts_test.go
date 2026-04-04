@@ -2,6 +2,8 @@ package shopts
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"regexp"
 	"strings"
 	"testing"
@@ -14,24 +16,24 @@ short=v;long=verbose;required=false;type=flag;help=Verbose;
 `
 
 func TestRun_Help(t *testing.T) {
-	var buf bytes.Buffer
-	if err := Run([]string{"shopts", sampleSchema, "--help"}, &buf); err != nil {
+	var errBuf bytes.Buffer
+	if err := Run([]string{"shopts", sampleSchema, "--help"}, io.Discard, &errBuf); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "Usage: shopts") {
-		t.Fatalf("expected help output, got: %q", buf.String())
+	if !strings.Contains(errBuf.String(), "Usage: shopts") {
+		t.Fatalf("expected help output, got: %q", errBuf.String())
 	}
 }
 
 func TestRun_ValidationAndOutput(t *testing.T) {
 	var buf bytes.Buffer
-	err := Run([]string{"shopts", sampleSchema, "-u", "alice", "-p", "s3cret", "-v"}, &buf)
+	err := Run([]string{"shopts", sampleSchema, "-u", "alice", "-p", "s3cret", "-v"}, &buf, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got := buf.String()
-	if !strings.Contains(got, "GO_SHOPTS_username") {
+	if !strings.Contains(got, "SHOPTS_USERNAME") {
 		t.Fatalf("expected key output, got: %q", got)
 	}
 	if !strings.Contains(got, "alice") {
@@ -632,7 +634,7 @@ func TestRun_BatchesTypeErrors(t *testing.T) {
 	// Type validation is batched via validateParsedValues; test through Run
 	schema := "long=port;type=int;\nlong=rate;type=float;"
 	var buf strings.Builder
-	err := Run([]string{"shopts", schema, "--port=abc", "--rate=xyz"}, &buf)
+	err := Run([]string{"shopts", schema, "--port=abc", "--rate=xyz"}, &buf, io.Discard)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -656,7 +658,7 @@ func TestRun_BatchAllErrors(t *testing.T) {
 	schema := "long=name;type=string;required=true;\nlong=age;type=int;required=true;"
 	var buf strings.Builder
 	// --age has parse error; --name is missing (validation error)
-	err := Run([]string{"shopts", schema, "--age=old"}, &buf)
+	err := Run([]string{"shopts", schema, "--age=old"}, &buf, io.Discard)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -737,8 +739,45 @@ func TestParseArgs_ListImplicitMaxItemsOverride(t *testing.T) {
 
 func TestParseArgs_ListRequiredImplicitMinItems(t *testing.T) {
 	var buf strings.Builder
-	err := Run([]string{"shopts", "long=tags;type=list;required=true;"}, &buf)
+	err := Run([]string{"shopts", "long=tags;type=list;required=true;"}, &buf, io.Discard)
 	if err == nil {
 		t.Fatal("expected error for required list with zero items")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Exit code and reserved namespace tests
+// ---------------------------------------------------------------------------
+
+func TestRun_ExitCode_SchemaError(t *testing.T) {
+	err := Run([]string{"shopts", "long=foo;type=invalid;"}, io.Discard, io.Discard)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != 2 {
+		t.Fatalf("expected exit code 2, got %d", exitErr.Code)
+	}
+}
+
+func TestRun_ExitCode_ParseError(t *testing.T) {
+	err := Run([]string{"shopts", "long=name;type=string;required=true;"}, io.Discard, io.Discard)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != 3 {
+		t.Fatalf("expected exit code 3, got %d", exitErr.Code)
+	}
+}
+
+func TestRun_ReservedPrefixGuard(t *testing.T) {
+	t.Setenv("GO_SHOPTS_PREFIX", "GO_SHOPTS_X")
+	err := Run([]string{"shopts", "long=name;type=string;"}, io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("expected error for reserved prefix")
+	}
+	if !strings.Contains(err.Error(), "reserved namespace") {
+		t.Fatalf("expected reserved namespace error, got: %v", err)
 	}
 }

@@ -3,6 +3,22 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.4] - 2026-04-03
+
+### Breaking Changes
+- Default emitted prefix changed from `GO_SHOPTS_` to `SHOPTS_`. Scripts using the default prefix must update variable references (e.g. `$GO_SHOPTS_USER` → `$SHOPTS_USER`).
+
+### Added
+- Reserved namespace guard: `GO_SHOPTS_PREFIX` must not start with `GO_SHOPTS_` (reserved for internal controls). Attempting to do so produces an immediate error (exit 1).
+- Distinct exit codes: `1` general failure, `2` schema error (invalid schema), `3` parse/validation error (bad arguments). Previously all failures exited with code `1`.
+
+### Changed
+- `GO_SHOPTS_UPCASE` now defaults to on (`true`), so emitted variable names are uppercase by default. Setting `GO_SHOPTS_UPCASE=0` retains lowercase output.
+
+### Fixed
+- CI release build now includes `-s -w` ldflags to strip symbols and debug info, keeping release binaries at ~1.8 MB instead of ~3 MB.
+- Release workflow now verifies CI has passed for the specific tagged commit, not just any successful main run.
+
 ---
 
 ## [0.0.3] - 2026-04-03
@@ -15,8 +31,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   - `bool` errors now say `must be a valid boolean`
 - Parse errors and validation errors are merged and reported together at end of a run.
 - `dedent` now strips both leading spaces and tabs, so tab-indented heredocs work correctly.
-
----
 
 ---
 

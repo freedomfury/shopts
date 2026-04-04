@@ -15,10 +15,9 @@ if [[ ! -x "${binary}" ]]; then
   go build -o "${binary}" ./cmd/shopts
 fi
 
-export GO_SHOPTS_UPCASE=1
 while IFS= read -r -d $'\0' k && IFS= read -r v; do
   printf -v "${k}" '%s' "${v}"
-  declare -xr "${k#GO_SHOPTS_}"="${v}"
+  declare -xr "${k#SHOPTS_}"="${v}"
 done < <("${binary}" "${SCHEMA}" -u alice -p s3cret -v)
 
 printf 'USERNAME=%s\n' "${USERNAME}"
