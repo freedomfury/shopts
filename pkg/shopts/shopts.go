@@ -115,16 +115,16 @@ func Run(argv []string, stdout, stderr io.Writer) error {
 
 // schemaEntry holds one parsed option definition.
 type schemaEntry struct {
-	Short           string
-	Long            string
-	Required        bool
-	Type            string
-	Help            string
-	Description     string
-	Enum            []string
-	Default         string
-	MinLength       *int
-	MaxLength       *int
+	Short            string
+	Long             string
+	Required         bool
+	Type             string
+	Help             string
+	Description      string
+	Enum             []string
+	Default          string
+	MinLength        *int
+	MaxLength        *int
 	Pattern          string
 	Failure          string
 	MinItems         *int
