@@ -3,6 +3,14 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.5] - 2026-04-04
+
+### Changed
+- Makefile `release` and `tag` targets are now idempotent. Running them multiple times with the same version will detect previous operations and warn instead of failing or creating duplicates.
+- `release` target now checks git log to detect if a release commit already exists, preventing duplicate release commits.
+- `tag` target now checks both local and remote tags before creating a new tag, preventing duplicate tags.
+---
+
 ## [0.0.4] - 2026-04-03
 
 ### Breaking Changes
