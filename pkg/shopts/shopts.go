@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -215,7 +216,14 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 			case "long":
 				entry.Long = val
 			case "required":
-				entry.Required = val == "true" || val == "1" || val == "yes"
+				switch val {
+				case "true", "1", "yes":
+					entry.Required = true
+				case "false", "0", "no":
+					entry.Required = false
+				default:
+					return nil, fmt.Errorf("schema entry %d: required must be true or false, got %q", entryNum, val)
+				}
 			case "type":
 				entry.Type = val
 			case "help":
@@ -325,6 +333,9 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 				return nil, fmt.Errorf("option %q: flag cannot declare string validation fields", e.Long)
 			}
 		}
+		if e.Type == "enum" && (e.MinLength != nil || e.MaxLength != nil || e.Pattern != "") {
+			return nil, fmt.Errorf("option %q: enum cannot declare minLength, maxLength, or pattern", e.Long)
+		}
 		if (e.Type == "int" || e.Type == "float" || e.Type == "bool") && (e.MinLength != nil || e.MaxLength != nil || e.Pattern != "") {
 			return nil, fmt.Errorf("option %q: %s type cannot use minLength, maxLength, or pattern", e.Long, e.Type)
 		}
@@ -335,6 +346,9 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 			if item == "" {
 				return nil, fmt.Errorf("option %q: enum values must not be empty", e.Long)
 			}
+		}
+		if hasDuplicate(e.Enum) {
+			return nil, fmt.Errorf("option %q: enum contains duplicate values", e.Long)
 		}
 		if e.Type != "enum" && len(e.Enum) > 0 {
 			return nil, fmt.Errorf("option %q: enum values declared but type is %q", e.Long, e.Type)
@@ -408,6 +422,17 @@ func isValidName(s string) bool {
 
 func isAlphanumeric(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+func hasDuplicate(ss []string) bool {
+	seen := make(map[string]struct{}, len(ss))
+	for _, s := range ss {
+		if _, ok := seen[s]; ok {
+			return true
+		}
+		seen[s] = struct{}{}
+	}
+	return false
 }
 
 // dedent removes common leading indentation from all non-empty lines.
@@ -613,13 +638,14 @@ func parseArgs(args []string, schema []schemaEntry) (map[string]string, []string
 
 	listValues := map[string][]string{}
 	result := map[string]string{}
+	seen := map[string]struct{}{}
 	var parseErrors []string
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
-			if i+1 < len(args) {
-				parseErrors = append(parseErrors, fmt.Sprintf("unsupported positional argument after --: %q", args[i+1]))
+			for _, pos := range args[i+1:] {
+				parseErrors = append(parseErrors, fmt.Sprintf("unsupported positional argument after --: %q", pos))
 			}
 			break
 		}
@@ -643,6 +669,11 @@ func parseArgs(args []string, schema []schemaEntry) (map[string]string, []string
 		case "list":
 			listValues[key] = append(listValues[key], val)
 		default:
+			if _, dup := seen[key]; dup {
+				parseErrors = append(parseErrors, fmt.Sprintf("option %q already specified", displayName(entry)))
+				continue
+			}
+			seen[key] = struct{}{}
 			result[key] = val
 		}
 	}
@@ -687,7 +718,9 @@ func parseArgs(args []string, schema []schemaEntry) (map[string]string, []string
 
 func parseOption(arg string, args []string, index int, shortMapping, longMapping map[string]schemaEntry) (schemaEntry, string, string, bool, error) {
 	var entry schemaEntry
-	var key, inlineValue string
+	var key string
+	var inlineValue string
+	var hasInline bool
 
 	if strings.HasPrefix(arg, "--") {
 		name := strings.TrimPrefix(arg, "--")
@@ -697,6 +730,7 @@ func parseOption(arg string, args []string, index int, shortMapping, longMapping
 		if idx := strings.IndexByte(name, '='); idx >= 0 {
 			inlineValue = name[idx+1:]
 			name = name[:idx]
+			hasInline = true
 		}
 		mapped, ok := longMapping[name]
 		if !ok {
@@ -712,6 +746,7 @@ func parseOption(arg string, args []string, index int, shortMapping, longMapping
 		if idx := strings.IndexByte(name, '='); idx >= 0 {
 			inlineValue = name[idx+1:]
 			name = name[:idx]
+			hasInline = true
 		}
 		if len(name) != 1 {
 			return entry, "", "", false, fmt.Errorf("unsupported short option bundle: -%s", name)
@@ -725,13 +760,13 @@ func parseOption(arg string, args []string, index int, shortMapping, longMapping
 	}
 
 	if entry.Type == "flag" {
-		if inlineValue != "" {
+		if hasInline {
 			return entry, "", "", false, fmt.Errorf("option %q does not take a value", displayName(entry))
 		}
 		return entry, key, "true", false, nil
 	}
 
-	if inlineValue != "" {
+	if hasInline {
 		return entry, key, inlineValue, false, nil
 	}
 	if index+1 >= len(args) {
@@ -779,8 +814,12 @@ func validateValue(entry schemaEntry, value string) error {
 			return errors.New("must be a valid integer")
 		}
 	case "float":
-		if _, err := strconv.ParseFloat(value, 64); err != nil {
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil {
 			return errors.New("must be a valid number")
+		}
+		if math.IsInf(f, 0) || math.IsNaN(f) {
+			return errors.New("must be a finite number")
 		}
 	case "bool":
 		if _, err := strconv.ParseBool(value); err != nil {

@@ -866,3 +866,305 @@ func TestRun_ReservedPrefixGuard(t *testing.T) {
 		t.Fatalf("expected reserved namespace error, got: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests for bug fixes
+// ---------------------------------------------------------------------------
+
+// --name= (empty inline value) should use empty string, not consume next arg.
+func TestParseArgs_EmptyInlineValue_Long(t *testing.T) {
+	schema, _ := parseSchema("long=name, type=string;")
+	vals, errs := parseArgs([]string{"--name=", "--other=val"}, schema)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for unknown --other, got %d: %v", len(errs), errs)
+	}
+	if vals["name"] != "" {
+		t.Fatalf("expected empty string for --name=, got %q", vals["name"])
+	}
+}
+
+func TestParseArgs_EmptyInlineValue_Short(t *testing.T) {
+	schema, _ := parseSchema("short=n, long=name, type=string;")
+	vals, errs := parseArgs([]string{"-n=", "--unknown=val"}, schema)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for unknown --unknown, got %d: %v", len(errs), errs)
+	}
+	if vals["name"] != "" {
+		t.Fatalf("expected empty string for -n=, got %q", vals["name"])
+	}
+}
+
+// --flag= (inline value on flag) should now be rejected even if value is empty.
+func TestParseArgs_FlagRejectsEmptyInlineValue(t *testing.T) {
+	schema, _ := parseSchema("short=v, long=verbose, type=flag;")
+	_, errs := parseArgs([]string{"--verbose="}, schema)
+	if errs == nil {
+		t.Fatal("expected error for flag with inline =")
+	}
+	if !strings.Contains(errs[0], "does not take a value") {
+		t.Fatalf("expected 'does not take a value' error, got: %v", errs[0])
+	}
+}
+
+// enum with minLength/maxLength/pattern should be rejected at schema parse time.
+func TestParseSchema_EnumRejectsMinLength(t *testing.T) {
+	_, err := parseSchema("long=x, type=enum, enum=\"a,b\", minLength=1;")
+	if err == nil {
+		t.Fatal("expected error for enum with minLength")
+	}
+	if !strings.Contains(err.Error(), "enum cannot declare") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseSchema_EnumRejectsMaxLength(t *testing.T) {
+	_, err := parseSchema("long=x, type=enum, enum=\"a,b\", maxLength=10;")
+	if err == nil {
+		t.Fatal("expected error for enum with maxLength")
+	}
+}
+
+func TestParseSchema_EnumRejectsPattern(t *testing.T) {
+	_, err := parseSchema("long=x, type=enum, enum=\"a,b\", pattern=^a$;")
+	if err == nil {
+		t.Fatal("expected error for enum with pattern")
+	}
+}
+
+// required= with non-boolean value should be a schema error.
+func TestParseSchema_RequiredInvalid(t *testing.T) {
+	_, err := parseSchema("long=foo, type=string, required=maybe;")
+	if err == nil {
+		t.Fatal("expected error for required=maybe")
+	}
+	if !strings.Contains(err.Error(), "required must be true or false") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseSchema_RequiredFalseAccepted(t *testing.T) {
+	for _, val := range []string{"false", "0", "no"} {
+		entries, err := parseSchema("long=foo, type=string, required=" + val + ";")
+		if err != nil {
+			t.Fatalf("required=%s should be valid: %v", val, err)
+		}
+		if entries[0].Required {
+			t.Fatalf("required=%s should set Required=false", val)
+		}
+	}
+}
+
+// parseFloat should reject NaN and Inf.
+func TestValidateValue_FloatRejectsNaN(t *testing.T) {
+	entry := schemaEntry{Long: "f", Type: "float"}
+	if err := validateValue(entry, "NaN"); err == nil {
+		t.Fatal("expected NaN to be rejected")
+	}
+}
+
+func TestValidateValue_FloatRejectsInf(t *testing.T) {
+	entry := schemaEntry{Long: "f", Type: "float"}
+	for _, v := range []string{"Inf", "+Inf", "-Inf"} {
+		if err := validateValue(entry, v); err == nil {
+			t.Fatalf("expected %s to be rejected", v)
+		}
+	}
+}
+
+// -- with multiple positional args should report all of them.
+func TestParseArgs_DoubleDashReportsAllPositionals(t *testing.T) {
+	schema, _ := parseSchema("long=name, type=string;")
+	_, errs := parseArgs([]string{"--name=x", "--", "arg1", "arg2", "arg3"}, schema)
+	if len(errs) != 3 {
+		t.Fatalf("expected 3 positional errors, got %d: %v", len(errs), errs)
+	}
+	combined := strings.Join(errs, "; ")
+	for _, arg := range []string{"arg1", "arg2", "arg3"} {
+		if !strings.Contains(combined, arg) {
+			t.Errorf("expected %q in errors, got: %q", arg, combined)
+		}
+	}
+}
+
+// Duplicate enum values should be rejected.
+func TestParseSchema_DuplicateEnum(t *testing.T) {
+	_, err := parseSchema(`long=mode, type=enum, enum="a,b,a";`)
+	if err == nil {
+		t.Fatal("expected error for duplicate enum values")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected duplicate error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Coverage gap tests
+// ---------------------------------------------------------------------------
+
+// Value that starts with a dash should work via inline = syntax.
+func TestParseArgs_ValueStartingWithDash(t *testing.T) {
+	schema, _ := parseSchema("long=name, type=string;")
+	vals, errs := parseArgs([]string{"--name=-foo"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if vals["name"] != "-foo" {
+		t.Fatalf("expected -foo, got %q", vals["name"])
+	}
+}
+
+// Value starting with dash via separate arg should still work (consumes next arg).
+func TestParseArgs_NegativeNumberAsValue(t *testing.T) {
+	schema, _ := parseSchema("long=num, type=int;")
+	vals, errs := parseArgs([]string{"--num", "-5"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if vals["num"] != "-5" {
+		t.Fatalf("expected -5, got %q", vals["num"])
+	}
+}
+
+// Unicode in string values should work.
+func TestParseArgs_UnicodeValue(t *testing.T) {
+	schema, _ := parseSchema("long=name, type=string;")
+	vals, errs := parseArgs([]string{"--name=\u65e5\u672c\u8a9e"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if vals["name"] != "\u65e5\u672c\u8a9e" {
+		t.Fatalf("expected unicode value, got %q", vals["name"])
+	}
+}
+
+// Empty string value via inline = should be accepted for string type.
+func TestValidateValue_EmptyString(t *testing.T) {
+	entry := schemaEntry{Long: "s", Type: "string"}
+	if err := validateValue(entry, ""); err != nil {
+		t.Fatalf("empty string should be valid for string type: %v", err)
+	}
+}
+
+// Empty string with minLength should fail.
+func TestValidateValue_EmptyStringWithMinLength(t *testing.T) {
+	min := 1
+	entry := schemaEntry{Long: "s", Type: "string", MinLength: &min}
+	if err := validateValue(entry, ""); err == nil {
+		t.Fatal("expected error for empty string with minLength=1")
+	}
+}
+
+// Scientific notation should be accepted as float.
+func TestValidateValue_FloatScientific(t *testing.T) {
+	entry := schemaEntry{Long: "f", Type: "float"}
+	if err := validateValue(entry, "1e10"); err != nil {
+		t.Fatalf("1e10 should be valid float: %v", err)
+	}
+}
+
+// Bool accepts various forms.
+func TestValidateValue_BoolEdgeCases(t *testing.T) {
+	entry := schemaEntry{Long: "b", Type: "bool"}
+	for _, v := range []string{"TRUE", "False", "t", "F"} {
+		if err := validateValue(entry, v); err != nil {
+			t.Fatalf("expected %q to be valid bool: %v", v, err)
+		}
+	}
+}
+
+// Enum is case-sensitive.
+func TestValidateValue_EnumCaseSensitive(t *testing.T) {
+	entry := schemaEntry{Long: "e", Type: "enum", Enum: []string{"a", "b"}}
+	if err := validateValue(entry, "A"); err == nil {
+		t.Fatal("expected error for uppercase A when enum has lowercase a")
+	}
+}
+
+// Trailing comma in entry is accepted.
+func TestParseSchema_TrailingComma(t *testing.T) {
+	entries, err := parseSchema("long=foo, type=string,;")
+	if err != nil {
+		t.Fatalf("trailing comma should be accepted: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+}
+
+// Multiple = in a field value preserves all but the first.
+func TestParseSchema_FieldWithMultipleEquals(t *testing.T) {
+	entries, err := parseSchema("long=foo, type=string, pattern=a=b;")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entries[0].Pattern != "a=b" {
+		t.Fatalf("expected pattern a=b, got %q", entries[0].Pattern)
+	}
+}
+
+// GO_SHOPTS_UPCASE=false should disable upcase.
+func TestShVarName_UpcaseDisabled(t *testing.T) {
+	name, err := shVarName("Foo_Bar", "P_", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "P_Foo_Bar" {
+		t.Fatalf("expected P_Foo_Bar, got %q", name)
+	}
+}
+
+// GO_SHOPTS_PREFIX= (empty) should output with no prefix.
+func TestShVarName_EmptyPrefix(t *testing.T) {
+	name, err := shVarName("foo", "", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "foo" {
+		t.Fatalf("expected foo, got %q", name)
+	}
+}
+
+// Repeating a non-list option should be an error.
+func TestParseArgs_RepeatedNonListRejected(t *testing.T) {
+	schema, _ := parseSchema("long=name, type=string;")
+	_, errs := parseArgs([]string{"--name=alice", "--name=bob"}, schema)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for repeated option, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0], "already specified") {
+		t.Fatalf("expected 'already specified' error, got: %v", errs[0])
+	}
+}
+
+// Repeating a list option is allowed.
+func TestParseArgs_RepeatedListAllowed(t *testing.T) {
+	schema, _ := parseSchema("long=tags, type=list;")
+	vals, errs := parseArgs([]string{"--tags=a", "--tags=b"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if vals["tags"] != "a,b" {
+		t.Fatalf("expected a,b, got %q", vals["tags"])
+	}
+}
+
+// Repeating a flag option is allowed (idempotent).
+func TestParseArgs_RepeatedFlagAllowed(t *testing.T) {
+	schema, _ := parseSchema("short=v, long=verbose, type=flag;")
+	vals, errs := parseArgs([]string{"-v", "--verbose"}, schema)
+	if errs != nil {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if vals["verbose"] != "true" {
+		t.Fatalf("expected true, got %q", vals["verbose"])
+	}
+}
+
+// Repeating via short then long should also be rejected for non-list.
+func TestParseArgs_RepeatedShortAndLongRejected(t *testing.T) {
+	schema, _ := parseSchema("short=n, long=name, type=string;")
+	_, errs := parseArgs([]string{"-n", "alice", "--name=bob"}, schema)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for repeated option, got %d: %v", len(errs), errs)
+	}
+}

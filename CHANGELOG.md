@@ -3,6 +3,20 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.12] - 2026-04-04
+
+### Fixed
+- Empty inline values (e.g., `--name=`) now correctly use empty string instead of consuming the next argument
+- Flags with inline values (e.g., `--flag=`) are now properly rejected with "does not take a value" error
+- Enum type now rejects incompatible minLength, maxLength, and pattern fields at schema parse time
+- `required=` field now validates boolean values and rejects non-boolean inputs like "maybe"
+- Float validation now rejects NaN and Inf values (only finite numbers accepted)
+- Double dash (`--`) with multiple positional arguments now reports all of them, not just the first
+- Duplicate enum values are now detected and rejected at schema parse time
+- Repeating non-list options now properly reports "already specified" error
+
+---
+
 ## [0.0.11] - 2026-04-04
 
 ### Changed
