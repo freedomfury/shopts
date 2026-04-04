@@ -3,6 +3,18 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.8] - 2026-04-04
+
+### Changed
+- Long option names now restricted to `[A-Za-z0-9_]` — hyphens are no longer allowed.
+- Enum items now support per-item quoting (`"a,b",c`) for values containing commas; the previous `\,` escape is removed.
+
+### Fixed
+- Missing trailing `;` in a schema now reports a clear `missing terminating ';'` error instead of the misleading "schema must contain at least one option".
+- Empty enum items (e.g. `a,,b`) are now rejected at schema parse time.
+
+---
+
 ## [0.0.7] - 2026-04-04
 
 ### Changed

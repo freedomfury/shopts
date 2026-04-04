@@ -60,9 +60,37 @@ func TestParseSchema_Empty(t *testing.T) {
 }
 
 func TestParseSchema_MissingSemicolon(t *testing.T) {
-	_, err := parseSchema("long=foo, type=string")
+	cases := []struct {
+		name   string
+		schema string
+		entry  string // expected entry number in error
+	}{
+		{"single entry", "long=foo, type=string", "1"},
+		{"last entry missing", "long=foo, type=string;\nlong=bar, type=int", "2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseSchema(tc.schema)
+			if err == nil {
+				t.Fatal("expected error for missing trailing semicolon")
+			}
+			if !strings.Contains(err.Error(), "missing terminating ';'") {
+				t.Fatalf("expected terminating semicolon error, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "entry "+tc.entry) {
+				t.Fatalf("expected entry %s in error, got: %v", tc.entry, err)
+			}
+		})
+	}
+}
+
+func TestParseSchema_LongNameRejectsHyphen(t *testing.T) {
+	_, err := parseSchema("long=foo-bar, type=string;")
 	if err == nil {
-		t.Fatal("expected error for missing trailing semicolon")
+		t.Fatal("expected error for hyphen in long name")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Fatalf("expected invalid characters error, got: %v", err)
 	}
 }
 
@@ -548,7 +576,7 @@ func TestShVarName_Basic(t *testing.T) {
 }
 
 func TestShVarName_Upcase(t *testing.T) {
-	name, err := shVarName("foo-bar", "P_", true)
+	name, err := shVarName("foo_bar", "P_", true)
 	if err != nil {
 		t.Fatalf("unexpected errors: %v", err)
 	}
@@ -557,8 +585,8 @@ func TestShVarName_Upcase(t *testing.T) {
 	}
 }
 
-func TestShVarName_HyphenSanitized(t *testing.T) {
-	name, err := shVarName("my-opt", "X_", false)
+func TestShVarName_UnderscorePreserved(t *testing.T) {
+	name, err := shVarName("my_opt", "X_", false)
 	if err != nil {
 		t.Fatalf("unexpected errors: %v", err)
 	}
@@ -579,16 +607,39 @@ func TestShVarName_Empty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSplitEnum(t *testing.T) {
-	got := splitEnum(`a,b,c`)
+	got, err := splitEnum(`a,b,c`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(got) != 3 || got[0] != "a" || got[1] != "b" || got[2] != "c" {
 		t.Fatalf("unexpected: %v", got)
 	}
 }
 
-func TestSplitEnum_Escaped(t *testing.T) {
-	got := splitEnum(`a\,b,c`)
+func TestSplitEnum_QuotedItemWithComma(t *testing.T) {
+	got, err := splitEnum(`"a,b",c`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(got) != 2 || got[0] != "a,b" || got[1] != "c" {
 		t.Fatalf("unexpected: %v", got)
+	}
+}
+
+func TestSplitEnum_InvalidQuote(t *testing.T) {
+	_, err := splitEnum(`"unterminated,c`)
+	if err == nil {
+		t.Fatal("expected error for unterminated quote")
+	}
+}
+
+func TestParseSchema_EmptyEnumItem(t *testing.T) {
+	_, err := parseSchema(`long=mode, type=enum, enum="a,,b";`)
+	if err == nil {
+		t.Fatal("expected error for empty enum item")
+	}
+	if !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("expected empty enum error, got: %v", err)
 	}
 }
 

@@ -224,8 +224,11 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 				entry.Description = val
 			case "enum":
 				if val != "" {
-					// parse enum items from the quoted value; allow escaped commas (\,)
-					entry.Enum = splitEnum(val)
+					items, err := splitEnum(val)
+					if err != nil {
+						return nil, fmt.Errorf("schema entry %d: %w", entryNum, err)
+					}
+					entry.Enum = items
 				}
 			case "default":
 				entry.Default = val
@@ -316,6 +319,11 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 		if e.Type == "enum" && len(e.Enum) == 0 {
 			return nil, fmt.Errorf("option %q: enum type must declare enum values", e.Long)
 		}
+		for _, item := range e.Enum {
+			if item == "" {
+				return nil, fmt.Errorf("option %q: enum values must not be empty", e.Long)
+			}
+		}
 		if e.Type != "enum" && len(e.Enum) > 0 {
 			return nil, fmt.Errorf("option %q: enum values declared but type is %q", e.Long, e.Type)
 		}
@@ -378,7 +386,7 @@ func isValidName(s string) bool {
 	}
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '_' || r == '-' {
+			(r >= '0' && r <= '9') || r == '_' {
 			continue
 		}
 		return false
@@ -453,7 +461,9 @@ func splitEntries(text string) ([]string, error) {
 	if inQuotes {
 		return nil, errors.New("unterminated quoted value in schema")
 	}
-	// Any trailing text after the last ';' is ignored (must be whitespace).
+	if trailing := strings.TrimSpace(text[start:]); trailing != "" {
+		return nil, fmt.Errorf("schema entry %d: missing terminating ';'", len(out)+1)
+	}
 	return out, nil
 }
 
@@ -532,32 +542,51 @@ func splitFields(line string) ([]string, error) {
 	return out, nil
 }
 
-// splitEnum splits an enum value on unescaped commas and unescapes \, sequences.
-func splitEnum(s string) []string {
+// splitEnum splits enum values on commas. Individual items may be quoted with
+// double quotes (Go string literal style) when they contain commas or other
+// special characters. Unquoted items are trimmed. Empty items are rejected
+// by the caller during schema validation.
+func splitEnum(s string) ([]string, error) {
+	parts := strings.Split(s, ",")
 	var out []string
-	var cur []byte
-	esc := false
-	for i := 0; i < len(s); i++ {
-		b := s[i]
-		if esc {
-			// accept any escaped char literally (e.g., ", or ,)
-			cur = append(cur, b)
-			esc = false
-			continue
+	for i := 0; i < len(parts); i++ {
+		item := strings.TrimSpace(parts[i])
+		if strings.HasPrefix(item, "\"") {
+			// Accumulate parts until we find the closing quote, since the
+			// quoted value itself may contain commas.
+			combined := item
+			for !isQuoteClosed(combined) && i+1 < len(parts) {
+				i++
+				combined += "," + parts[i]
+			}
+			unquoted, err := strconv.Unquote(combined)
+			if err != nil {
+				return nil, fmt.Errorf("invalid quoted enum item: %s", combined)
+			}
+			out = append(out, strings.TrimSpace(unquoted))
+		} else {
+			out = append(out, item)
 		}
-		if b == '\\' {
-			esc = true
-			continue
-		}
-		if b == ',' {
-			out = append(out, strings.TrimSpace(string(cur)))
-			cur = cur[:0]
-			continue
-		}
-		cur = append(cur, b)
 	}
-	out = append(out, strings.TrimSpace(string(cur)))
-	return out
+	return out, nil
+}
+
+// isQuoteClosed checks whether a string that starts with " also ends with an
+// unescaped ". This is a quick heuristic used by splitEnum to reassemble
+// quoted items that were split on commas.
+func isQuoteClosed(s string) bool {
+	if len(s) < 2 || s[0] != '"' {
+		return false
+	}
+	if s[len(s)-1] != '"' {
+		return false
+	}
+	// Count trailing backslashes to ensure the closing quote is not escaped.
+	n := 0
+	for i := len(s) - 2; i >= 0 && s[i] == '\\'; i-- {
+		n++
+	}
+	return n%2 == 0
 }
 
 func parseArgs(args []string, schema []schemaEntry) (map[string]string, []string) {
