@@ -15,14 +15,14 @@ Parsing command-line arguments in Bash is tedious and error-prone. The typical a
 ```bash
 # Instead of 40+ lines of case/shift boilerplate:
 SCHEMA='
-short=u;long=user;required=true;type=string;minLength=3;help=Username;
-short=p;long=port;type=int;default=8080;help=Port number;
-short=v;long=verbose;type=flag;help=Enable verbose output;
+short=u, long=user, required=true, type=string, minLength=3, help=Username;
+short=p, long=port, type=int, default=8080, help=Port number;
+short=v, long=verbose, type=flag, help=Enable verbose output;
 '
 # Emits SHOPTS_<LONG> for each option (uppercase by default).
 # GO_SHOPTS_ is reserved for internal controls — your variables land in SHOPTS_.
 
-while IFS= read -r -d $'\0' key && IFS= read -r val; do
+while IFS=$'\t' read -r key val; do
   # Variables are assigned here as shopts streams them out.
   printf -v "$key" '%s' "$val"
 done < <(shopts "$SCHEMA" "$@")
@@ -35,7 +35,7 @@ printf "Port: %d\n" "$SHOPTS_PORT"
 
 That's it. Arguments are parsed, validated, type-checked, and exported as shell variables. If anything is wrong — missing required option, bad type, value too short — `shopts` prints a clear error and exits non-zero. Pass `-h` and your users get auto-generated help text derived from the schema.
 
-**No `eval`. No subshells. No dependencies.** Output uses NUL-delimited records (`KEY\0VALUE\n`), which are safe to consume in Bash without worrying about spaces, quotes, or injection.
+**No `eval`. No subshells. No dependencies.** Output uses tab-delimited records (`KEY\tVALUE\n`), which are safe to consume in Bash without worrying about spaces, quotes, or injection.
 
 For comparison, see [bench/bash-parser.sh](bench/bash-parser.sh) — a hand-written Bash implementation of the same logic. Most of that file is the boilerplate argument-parsing code that `shopts` eliminates.
 
@@ -49,7 +49,7 @@ For comparison, see [bench/bash-parser.sh](bench/bash-parser.sh) — a hand-writ
 - Environment-controlled output naming: `GO_SHOPTS_PREFIX`, `GO_SHOPTS_UPCASE`.
 - Reserved namespace: `GO_SHOPTS_` prefix is owned by the binary; `GO_SHOPTS_PREFIX` must not start with `GO_SHOPTS_`.
 - `-h`/`--help` for schema-derived usage text.
-- No shell eval; output is intended for safe `read -d $'\0'` consumer patterns.
+- No shell eval; output is intended for safe `IFS=$'\t' read -r` consumer patterns.
 
 ## Usage
 
@@ -63,23 +63,23 @@ shopts "$SCHEMA" [OPTIONS...]
 
 ### Schema format
 
-The schema is a text block containing one or more non-empty lines. Each line is
-semicolon-separated `key=value` pairs terminated by `;`.
+The schema is a text block containing one or more entries. Each entry is
+terminated by `;` and its fields are separated by `, ` (comma-space).
 
-- each line defines one option
+- each entry defines one option
 - `long` is **required**; `short` is optional (primarily a convenience alias)
 - fields are `short`, `long`, `required`, `type`, `help`, etc.
-- optional quoting with Go-style string literals (for semicolons, commas, etc.)
+- optional quoting with Go-style string literals (for commas or semicolons inside values)
 
 
 Example:
 
 ```bash
 SCHEMA='
-short=u;long=username;required=true;type=string;help=Username;minLength=3;
-short=p;long=password;required=true;type=string;help=Password;minLength=6;
-short=v;long=verbose;type=flag;help=Verbose mode;
-short=t;long=tags;type=list;minItems=1;maxItems=5;
+short=u, long=username, required=true, type=string, help=Username, minLength=3;
+short=p, long=password, required=true, type=string, help=Password, minLength=6;
+short=v, long=verbose, type=flag, help=Verbose mode;
+short=t, long=tags, type=list, minItems=1, maxItems=5;
 '
 
 ./shopts "$SCHEMA" -u alice -p s3cret -v -t a -t b
@@ -144,6 +144,42 @@ There is no separate `benchmark/` folder; the benchmark helpers live in `bench/`
 | `minItems` | `list` | Minimum number of values (default: 1 when `required=true`, else 0) |
 | `maxItems` | `list` | Maximum number of values (default: 100) |
 
+## Built-in pattern validators
+
+The `pattern` field accepts either a raw Go regex or a named built-in validator using `{{ Name }}` syntax:
+
+```bash
+long=email,   type=string, pattern={{ EmailAddress }}, failure=must be a valid email;
+long=version, type=string, pattern={{ SemVer }}, default=1.0.0;
+long=host,    type=string, pattern={{ IPv4Address }}, required=true;
+long=port,    type=string, pattern={{ PortNumber }}, default=8080;
+```
+
+Spacing inside the braces is flexible: `{{Name}}`, `{{ Name }}`, `{{ Name}}` all work.
+
+An unknown name is a schema error (exit 2). The optional `failure=` field overrides the default error message for any pattern, built-in or raw regex.
+
+| Template | Validates | Backed by |
+|---|---|---|
+| `EmailAddress` | `user@domain.tld` | regex |
+| `URL` | Full URL with scheme (`https://...`) | regex |
+| `URLScheme` | Protocol label (`https`, `ftp`, `git+ssh`) | regex |
+| `DomainName` | Dot-separated labels (`github.com`) | regex |
+| `Subdomain` | Single DNS label (`docs`, `api`) | regex |
+| `URLPath` | Starts with `/` (`/users/123`) | regex |
+| `QueryString` | Starts with `?` (`?key=val`) | regex |
+| `Fragment` | Starts with `#` (`#section-2`) | regex |
+| `IPv4Address` | Four-octet address (`192.168.1.1`) | `net.ParseIP` |
+| `IPv6Address` | Colon-hex address (`2001:db8::1`) | `net.ParseIP` |
+| `CIDRBlock` | IP + prefix mask (`10.0.0.0/24`) | `net.ParseCIDR` |
+| `AbsolutePath` | Unix absolute path (`/usr/local/bin`) | regex |
+| `RelativePath` | Relative path (`./config/file.yaml`) | regex |
+| `GitRef` | Branch, tag, `HEAD`, or `refs/` path | regex |
+| `GitSHA` | 7–40 lowercase hex chars | regex |
+| `SemVer` | `MAJOR.MINOR.PATCH[-pre][+build]` | string parsing |
+| `PortNumber` | Integer 1–65535 | `strconv.Atoi` + bounds |
+| `EnvVar` | `SCREAMING_SNAKE_CASE` | regex |
+
 ## Validation rules
 
 - `required` and `default` are mutually exclusive.
@@ -155,10 +191,11 @@ There is no separate `benchmark/` folder; the benchmark helpers live in `bench/`
 
 ## Output behavior
 
-- Successful parse prints `KEY\0VALUE\n` for each emitted option.
+- Successful parse prints `KEY\tVALUE\n` for each emitted option.
 - `KEY` is generated as `SHOPTS_<sanitized-long>` by default (uppercase).
 - `GO_SHOPTS_UPCASE=1` uppercases the key name (default on).
 - `GO_SHOPTS_PREFIX` overrides the prefix (must be a valid shell identifier prefix, or empty; must not start with `GO_SHOPTS_`).
+- `GO_SHOPTS_OUT_DELIM` overrides the field delimiter between key and value (default: tab).
 - `list` values are joined with `GO_SHOPTS_LIST_DELIM` (`,`, default).
 
 ## Exit codes

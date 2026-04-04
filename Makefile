@@ -29,7 +29,7 @@ lint:
 
 benchmark: $(BINARY)
 	./bench/benchmark.sh $(N) \
-	  "long=user;short=u;required=true;type=string;minLength=3;help=Username;" \
+	  "long=user, short=u, required=true, type=string, minLength=3, help=Username;" \
 	  -u alice
 
 compare: $(BINARY)

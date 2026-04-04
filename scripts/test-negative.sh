@@ -3,10 +3,10 @@
 set -euo pipefail
 
 SCHEMA='
-short=u;long=username;required=true;type=string;help=Username for login;description=The username to authenticate with the system.;minLength=3;
-short=p;long=pass;required=true;type=string;help=Password for login;minLength=6;
-short=v;long=verbose;required=false;type=flag;help=Enable verbose output;
-short=m;long=mode;required=false;type=enum;enum=dev,prod;default=dev;help=Execution mode;
+short=u, long=username, required=true, type=string, help=Username for login, description=The username to authenticate with the system., minLength=3;
+short=p, long=pass, required=true, type=string, help=Password for login, minLength=6;
+short=v, long=verbose, required=false, type=flag, help=Enable verbose output;
+short=m, long=mode, required=false, type=enum, enum="dev,prod", default=dev, help=Execution mode;
 '
 
 help_out=$(mktemp)
@@ -37,9 +37,10 @@ Options:
   -V, --version            Print version and exit
 
 Environment variables:
-  GO_SHOPTS_UPCASE=1       Output variable names in uppercase
-  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')
-  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'SHOPTS_')
+  GO_SHOPTS_UPCASE=1           Output variable names in uppercase
+  GO_SHOPTS_LIST_DELIM=,       Delimiter for list-type options (default: ',')
+  GO_SHOPTS_OUT_DELIM=\t    Field delimiter between key and value in output (default: tab)
+  GO_SHOPTS_PREFIX=X_          Override output variable prefix (default: 'SHOPTS_')
 
 Type notes:
   int, float, bool: parsed and validated as native Go types
@@ -66,9 +67,10 @@ Options:
   -V, --version            Print version and exit
 
 Environment variables:
-  GO_SHOPTS_UPCASE=1       Output variable names in uppercase
-  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')
-  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'SHOPTS_')
+  GO_SHOPTS_UPCASE=1           Output variable names in uppercase
+  GO_SHOPTS_LIST_DELIM=,       Delimiter for list-type options (default: ',')
+  GO_SHOPTS_OUT_DELIM=\t    Field delimiter between key and value in output (default: tab)
+  GO_SHOPTS_PREFIX=X_          Override output variable prefix (default: 'SHOPTS_')
 
 Type notes:
   int, float, bool: parsed and validated as native Go types

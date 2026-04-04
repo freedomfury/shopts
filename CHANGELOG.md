@@ -3,6 +3,21 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.6] - 2026-04-04
+
+### Breaking Changes
+- Output field delimiter changed from NUL (`\0`) to tab (`\t`). The consumer pattern in Bash scripts must change from `while IFS= read -r -d $'\0' key && IFS= read -r val` to `while IFS=$'\t' read -r key val`.
+- Values containing a tab character are now rejected as invalid input (same treatment as newline). Use `GO_SHOPTS_OUT_DELIM` to select a different delimiter if tab appears in your values.
+
+### Added
+- Built-in pattern validators: use `pattern={{ Name }}` in a schema field instead of a raw regex. 18 validators available (`EmailAddress`, `URL`, `IPv4Address`, `SemVer`, `PortNumber`, `GitSHA`, etc.). Unknown names are schema errors (exit 2). See README for the full table.
+- `GO_SHOPTS_OUT_DELIM` environment variable to override the output field delimiter (default: tab). Values containing the configured delimiter are rejected at parse time.
+
+### Fixed
+- `make benchmark` schema string used `;` as field separators instead of `,`, causing every benchmark run to fail with a schema error.
+
+---
+
 ## [0.0.5] - 2026-04-04
 
 ### Changed
@@ -62,8 +77,8 @@ Initial release.
 - Schema-driven CLI argument parsing from an inline text schema
 - Supported types: `string`, `int`, `float`, `bool`, `enum`, `list`, `flag`
 - Validation: `required`, `default`, `minLength`/`maxLength`, `pattern`/`failure`, `enum`, `minItems`/`maxItems`
-- Shell-safe `KEY\0VALUE\n` output format for safe `read -d $'\0'` consumption
-- Environment controls: `GO_SHOPTS_PREFIX`, `GO_SHOPTS_UPCASE`, `GO_SHOPTS_LIST_DELIM`
+- Shell-safe `KEY\tVALUE\n` output format for safe `IFS=$'\t' read -r` consumption
+- Environment controls: `GO_SHOPTS_PREFIX`, `GO_SHOPTS_UPCASE`, `GO_SHOPTS_LIST_DELIM`, `GO_SHOPTS_OUT_DELIM`
 - `-h`/`--help` for schema-derived usage text
 - `-V`/`--version` to print the build version
 - `--` to terminate option parsing

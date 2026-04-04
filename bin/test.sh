@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 SCHEMA='
-short=u;long=user;required=true;type=string;minLength=3;help=Username;
-short=p;long=port;type=int;default=8080;help=Port number;
-short=v;long=verbose;type=flag;help=Enable verbose output;
+short=u, long=user, required=true, type=string, minLength=3, help=Username;
+short=p, long=port, type=int, default=8080, help=Port number;
+short=v, long=verbose, type=flag, help=Enable verbose output;
 '
 
-while IFS= read -r -d $'\0' key && IFS= read -r val; do
+while IFS=$'\t' read -r key val; do
   printf -v "$key" '%s' "$val"
 done < <(./bin/shopts "$SCHEMA" "$@")
 wait $! || exit $?

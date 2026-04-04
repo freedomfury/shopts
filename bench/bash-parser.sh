@@ -130,7 +130,7 @@ dev | prod | test) : ;;
     ;;
 esac
 
-# helper to emit KEY\0VALUE\n records
+# helper to emit KEY\tVALUE\n records
 _kv() {
     local key="$1"
     local val="$2"
@@ -138,7 +138,7 @@ _kv() {
         key="$(printf '%s' "${key}" | tr '[:lower:]' '[:upper:]')"
     fi
     key="${prefix}${key}"
-    printf '%s\0%s\n' "${key}" "${val}"
+    printf '%s\t%s\n' "${key}" "${val}"
 }
 
 # emit

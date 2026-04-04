@@ -26,14 +26,14 @@ if [[ ! -x "${BASH_PARSER}" ]]; then
     exit 2
 fi
 
-# Schema to use (equals-semicolon format)
+# Schema to use (comma-separated fields, semicolon-terminated entries)
 SCHEMA=$(
     cat <<'SCHEMA'
-long=user;short=u;required=true;type=string;minLength=3;help=Username for login;
-long=pass;short=p;required=true;type=string;minLength=8;help=Password for login;
-long=mode;short=m;required=false;type=enum;default=dev;enum=dev,prod,test;help=Mode of operation;
-long=tags;short=t;required=false;type=list;minItems=1;maxItems=5;help=Tags (repeatable);
-long=verbose;short=v;required=false;type=flag;help=Verbose;
+long=user, short=u, required=true, type=string, minLength=3, help=Username for login;
+long=pass, short=p, required=true, type=string, minLength=8, help=Password for login;
+long=mode, short=m, required=false, type=enum, default=dev, enum="dev,prod,test", help=Mode of operation;
+long=tags, short=t, required=false, type=list, minItems=1, maxItems=5, help=Tags (repeatable);
+long=verbose, short=v, required=false, type=flag, help=Verbose;
 SCHEMA
 )
 

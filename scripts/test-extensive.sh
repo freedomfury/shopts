@@ -5,21 +5,21 @@ set -euo pipefail
 # Extensive test for shopts: covers all supported types, variables, and edge cases
 
 SCHEMA='
-short=s;long=stringval;required=true;type=string;help=A required string value;
-short=i;long=intval;required=false;type=int;help=Optional integer value;default=42;
-short=f;long=floatval;required=false;type=float;help=Optional float value;default=3.14;
-short=b;long=boolval;required=false;type=bool;help=Optional boolean value;default=false;
-short=B;long=booltrue;required=false;type=bool;help=Bool that defaults to true;default=true;
-short=e;long=enumval;required=false;type=enum;enum=red,green,blue;default=green;help=Enum value;
-short=l;long=listval;required=false;type=list;help=Optional list value;
-short=t;long=taglist;required=false;type=list;minItems=1;maxItems=5;help=Tags list with item constraints;
-short=F;long=flagval;required=false;type=flag;help=Optional flag;
-short=T;long=trueflag;required=false;type=flag;default=true;help=Flag that defaults to true;
-short=d;long=defval;required=false;type=string;help=Has a default;default=defaultval;
-short=n;long=nameval;required=false;type=string;minLength=2;maxLength=10;help=Name with length constraints;default=hi;
-short=p;long=patternval;required=false;type=string;pattern=^[a-z]+$;failure=must be lowercase letters only;help=Pattern validated string;default=abc;
-short=w;long=wordonly;required=false;type=string;pattern=^\D+$;failure=this is not a string;help=Pattern-validated word (rejects numbers);default=hello;
-long=longonly;required=false;type=string;help=Long-only option no short flag;description=This option has no short flag.;default=longonly;
+short=s, long=stringval, required=true, type=string, help=A required string value;
+short=i, long=intval, required=false, type=int, help=Optional integer value, default=42;
+short=f, long=floatval, required=false, type=float, help=Optional float value, default=3.14;
+short=b, long=boolval, required=false, type=bool, help=Optional boolean value, default=false;
+short=B, long=booltrue, required=false, type=bool, help=Bool that defaults to true, default=true;
+short=e, long=enumval, required=false, type=enum, enum="red,green,blue", default=green, help=Enum value;
+short=l, long=listval, required=false, type=list, help=Optional list value;
+short=t, long=taglist, required=false, type=list, minItems=1, maxItems=5, help=Tags list with item constraints;
+short=F, long=flagval, required=false, type=flag, help=Optional flag;
+short=T, long=trueflag, required=false, type=flag, default=true, help=Flag that defaults to true;
+short=d, long=defval, required=false, type=string, help=Has a default, default=defaultval;
+short=n, long=nameval, required=false, type=string, minLength=2, maxLength=10, help=Name with length constraints, default=hi;
+short=p, long=patternval, required=false, type=string, pattern=^[a-z]+$, failure=must be lowercase letters only, help=Pattern validated string, default=abc;
+short=w, long=wordonly, required=false, type=string, pattern=^\D+$, failure=this is not a string, help=Pattern-validated word (rejects numbers), default=hello;
+long=longonly, required=false, type=string, help=Long-only option no short flag, description=This option has no short flag., default=longonly;
 '
 
 binary=bin/shopts
@@ -28,7 +28,7 @@ if [[ ! -x "${binary}" ]]; then
 fi
 
 # Test: all options provided
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   printf -v "${k}" '%s' "${v}"
   declare -x "${k#SHOPTS_}"="${v}"
 done < <("${binary}" "${SCHEMA}" \
@@ -55,7 +55,7 @@ printf 'LONGONLY=%s\n' "${LONGONLY}"
 
 echo "--- Defaults and missing values ---"
 # Test: only required and some optional
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   printf -v "${k}" '%s' "${v}"
   declare -x "${k#SHOPTS_}"="${v}"
 done < <("${binary}" "${SCHEMA}" -s "world" -t only -F)
@@ -91,7 +91,7 @@ fi
 
 echo "--- List delimiter test (colon) ---"
 list_delim_val=""
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   if [[ "${k}" == "SHOPTS_LISTVAL" ]]; then
     list_delim_val="${v}"
     break
@@ -189,7 +189,7 @@ fi
 
 echo "--- flag default=true (not passed) ---"
 trueflag_val=""
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   if [[ "${k}" == "SHOPTS_TRUEFLAG" ]]; then
     trueflag_val="${v}"
     break
@@ -205,7 +205,7 @@ fi
 
 echo "--- inline --long=value syntax ---"
 inline_val=""
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   if [[ "${k}" == "SHOPTS_STRINGVAL" ]]; then
     inline_val="${v}"
     break
@@ -221,7 +221,7 @@ fi
 
 echo "--- GO_SHOPTS_PREFIX override ---"
 prefixed_val=""
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   if [[ "${k}" == "MYAPP_STRINGVAL" ]]; then
     prefixed_val="${v}"
     break
@@ -255,7 +255,7 @@ fi
 
 echo "--- long-only option emitted correctly ---"
 longonly_val=""
-while IFS= read -r -d $'\0' k && IFS= read -r v; do
+while IFS=$'\t' read -r k v; do
   if [[ "${k}" == "SHOPTS_LONGONLY" ]]; then
     longonly_val="${v}"
     break

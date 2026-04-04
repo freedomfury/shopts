@@ -81,8 +81,13 @@ func Run(argv []string, stdout, stderr io.Writer) error {
 		return printUsage(stderr, schema)
 	}
 
+	outputDelim := "\t"
+	if v := os.Getenv("GO_SHOPTS_OUT_DELIM"); v != "" {
+		outputDelim = v
+	}
+
 	values, parseErrors := parseArgs(args, schema)
-	validationErrors := validateParsedValues(schema, values)
+	validationErrors := validateParsedValues(schema, values, outputDelim)
 
 	allErrors := append(parseErrors, validationErrors...)
 	if len(allErrors) > 0 {
@@ -100,7 +105,7 @@ func Run(argv []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(stdout, "%s\x00%s\n", outName, val); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s%s%s\n", outName, outputDelim, val); err != nil {
 			return err
 		}
 	}
@@ -120,31 +125,43 @@ type schemaEntry struct {
 	Default         string
 	MinLength       *int
 	MaxLength       *int
-	Pattern         string
-	Failure         string
-	MinItems        *int
-	MaxItems        *int
-	CompiledPattern *regexp.Regexp
+	Pattern          string
+	Failure          string
+	MinItems         *int
+	MaxItems         *int
+	CompiledPattern  *regexp.Regexp
+	BuiltinValidator func(string) bool
 }
 
-// parseSchema parses the key=value; schema format.
-// Each option occupies one non-empty line. Every line must end with a semicolon.
+// parseSchema parses the key=value, schema format.
+// Each option is terminated by a semicolon and may span multiple lines.
+// Fields within an entry are separated by commas.
 //
-// Values may be provided either unquoted (e.g. long=user;type=string;) or
+// Values may be provided either unquoted (e.g. long=user, type=string;) or
 // double-quoted as Go string literals when they contain delimiters or special
-// characters (e.g. help="Contains; semicolons and = equals"). Quoting is
+// characters (e.g. help="Contains, commas and = equals"). Quoting is
 // optional and the parser will unquote values that start with a '"'. Use
 // quoting for fields like `help` or `enum` when their contents may include
 // commas, semicolons, or equals characters.
 //
-// Example unquoted line:
+// Example single-line entry:
 //
-//	long=user;short=u;required=true;type=string;minLength=3;help=Username;
+//	long=user, short=u, required=true, type=string, minLength=3, help=Username;
 //
-// Example quoted line:
+// Example multi-line entry:
 //
-//	long=mode;short=m;type=enum;enum="dev,prod,test";help="Mode; selects env";
+//	long=user,
+//	short=u,
+//	required=true,
+//	type=string,
+//	help=Username;
+//
+// Example quoted value:
+//
+//	long=mode, short=m, type=enum, enum="dev,prod,test", help="Mode, selects env";
 func parseSchema(schemaText string) ([]schemaEntry, error) {
+	// Strip carriage returns for CRLF compatibility.
+	schemaText = strings.ReplaceAll(schemaText, "\r", "")
 	// Allow callers to pass indented heredocs / multiline strings. Remove
 	// common leading indentation so schema lines don't need manual trimming.
 	schemaText = dedent(schemaText)
@@ -153,28 +170,31 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 		return nil, errors.New("schema cannot be empty")
 	}
 
+	// Split on unquoted ';' to get one block per entry.
+	rawEntries, err := splitEntries(schemaText)
+	if err != nil {
+		return nil, err
+	}
+
 	var entries []schemaEntry
-	lineNum := 0
-	for _, line := range strings.Split(schemaText, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	entryNum := 0
+	for _, block := range rawEntries {
+		// Normalize newlines outside quotes to spaces, then trim.
+		block = normalizeWhitespace(block)
+		if block == "" {
 			continue
 		}
-		lineNum++
-
-		if !strings.HasSuffix(line, ";") {
-			return nil, fmt.Errorf("schema line %d: line must end with a semicolon: %q", lineNum, line)
-		}
+		entryNum++
 
 		entry := schemaEntry{}
-		fields, err := splitFields(line)
+		fields, err := splitFields(block)
 		if err != nil {
-			return nil, fmt.Errorf("schema line %d: %w", lineNum, err)
+			return nil, fmt.Errorf("schema entry %d: %w", entryNum, err)
 		}
 		for _, field := range fields {
 			idx := strings.IndexByte(field, '=')
 			if idx < 0 {
-				return nil, fmt.Errorf("schema line %d: field %q missing '='", lineNum, field)
+				return nil, fmt.Errorf("schema entry %d: field %q missing '='", entryNum, field)
 			}
 			key := strings.TrimSpace(field[:idx])
 			rawVal := strings.TrimSpace(field[idx+1:])
@@ -183,7 +203,7 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 			if strings.HasPrefix(rawVal, "\"") {
 				valUnq, err := strconv.Unquote(rawVal)
 				if err != nil {
-					return nil, fmt.Errorf("schema line %d: invalid quoted value for %q: %w", lineNum, key, err)
+					return nil, fmt.Errorf("schema entry %d: invalid quoted value for %q: %w", entryNum, key, err)
 				}
 				val = strings.TrimSpace(valUnq)
 			} else {
@@ -212,13 +232,13 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 			case "minLength":
 				n, err := strconv.Atoi(val)
 				if err != nil {
-					return nil, fmt.Errorf("schema line %d: minLength must be an integer, got %q", lineNum, val)
+					return nil, fmt.Errorf("schema entry %d: minLength must be an integer, got %q", entryNum, val)
 				}
 				entry.MinLength = &n
 			case "maxLength":
 				n, err := strconv.Atoi(val)
 				if err != nil {
-					return nil, fmt.Errorf("schema line %d: maxLength must be an integer, got %q", lineNum, val)
+					return nil, fmt.Errorf("schema entry %d: maxLength must be an integer, got %q", entryNum, val)
 				}
 				entry.MaxLength = &n
 			case "pattern":
@@ -228,17 +248,17 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 			case "minItems":
 				n, err := strconv.Atoi(val)
 				if err != nil {
-					return nil, fmt.Errorf("schema line %d: minItems must be an integer, got %q", lineNum, val)
+					return nil, fmt.Errorf("schema entry %d: minItems must be an integer, got %q", entryNum, val)
 				}
 				entry.MinItems = &n
 			case "maxItems":
 				n, err := strconv.Atoi(val)
 				if err != nil {
-					return nil, fmt.Errorf("schema line %d: maxItems must be an integer, got %q", lineNum, val)
+					return nil, fmt.Errorf("schema entry %d: maxItems must be an integer, got %q", entryNum, val)
 				}
 				entry.MaxItems = &n
 			default:
-				return nil, fmt.Errorf("schema line %d: unknown field %q", lineNum, key)
+				return nil, fmt.Errorf("schema entry %d: unknown field %q", entryNum, key)
 			}
 		}
 		entries = append(entries, entry)
@@ -324,11 +344,20 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 			return nil, fmt.Errorf("option %q: failure message declared but no pattern specified", e.Long)
 		}
 		if e.Pattern != "" {
-			re, err := regexp.Compile(e.Pattern)
-			if err != nil {
-				return nil, fmt.Errorf("option %q: invalid pattern: %w", e.Long, err)
+			fn, name := lookupBuiltinValidator(e.Pattern)
+			switch {
+			case name != "" && fn == nil:
+				return nil, fmt.Errorf("option %q: unknown built-in validator %q (available: %s)",
+					e.Long, name, strings.Join(builtinValidatorNames(), ", "))
+			case fn != nil:
+				e.BuiltinValidator = fn
+			default:
+				re, err := regexp.Compile(e.Pattern)
+				if err != nil {
+					return nil, fmt.Errorf("option %q: invalid pattern: %w", e.Long, err)
+				}
+				e.CompiledPattern = re
 			}
-			e.CompiledPattern = re
 		}
 		if e.Default != "" {
 			if err := validateValue(*e, e.Default); err != nil {
@@ -395,8 +424,74 @@ func dedent(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// splitFields splits a schema line into key=value fields separated by
-// unquoted semicolons. Values are expected to be quoted (start with ").
+// splitEntries splits the full schema text on unquoted ';' characters,
+// returning one raw block per schema entry.
+func splitEntries(text string) ([]string, error) {
+	var out []string
+	inQuotes := false
+	esc := false
+	start := 0
+	for i := 0; i < len(text); i++ {
+		b := text[i]
+		if esc {
+			esc = false
+			continue
+		}
+		if inQuotes && b == '\\' {
+			esc = true
+			continue
+		}
+		if b == '"' {
+			inQuotes = !inQuotes
+			continue
+		}
+		if b == ';' && !inQuotes {
+			out = append(out, text[start:i])
+			start = i + 1
+		}
+	}
+	if inQuotes {
+		return nil, errors.New("unterminated quoted value in schema")
+	}
+	// Any trailing text after the last ';' is ignored (must be whitespace).
+	return out, nil
+}
+
+// normalizeWhitespace replaces newlines and tabs outside of quoted strings
+// with spaces, then trims the result. This allows multi-line entries to be
+// collapsed into a single parseable string.
+func normalizeWhitespace(s string) string {
+	var b strings.Builder
+	inQuotes := false
+	esc := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if esc {
+			b.WriteByte(c)
+			esc = false
+			continue
+		}
+		if inQuotes && c == '\\' {
+			b.WriteByte(c)
+			esc = true
+			continue
+		}
+		if c == '"' {
+			inQuotes = !inQuotes
+			b.WriteByte(c)
+			continue
+		}
+		if !inQuotes && (c == '\n' || c == '\t') {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// splitFields splits a schema entry into key=value fields separated by
+// unquoted commas.
 func splitFields(line string) ([]string, error) {
 	var out []string
 	inQuotes := false
@@ -417,7 +512,7 @@ func splitFields(line string) ([]string, error) {
 			inQuotes = !inQuotes
 			continue
 		}
-		if b == ';' && !inQuotes {
+		if b == ',' && !inQuotes {
 			field := strings.TrimSpace(line[start:i])
 			if field != "" {
 				out = append(out, field)
@@ -604,7 +699,7 @@ func parseOption(arg string, args []string, index int, shortMapping, longMapping
 	return entry, key, args[index+1], true, nil
 }
 
-func validateParsedValues(schema []schemaEntry, values map[string]string) []string {
+func validateParsedValues(schema []schemaEntry, values map[string]string, outputDelim string) []string {
 	var problems []string
 	for _, entry := range schema {
 		val, ok := values[entry.Long]
@@ -618,8 +713,8 @@ func validateParsedValues(schema []schemaEntry, values map[string]string) []stri
 			problems = append(problems, fmt.Sprintf("option %q value contains newline", displayName(entry)))
 			continue
 		}
-		if strings.ContainsRune(val, '\x00') {
-			problems = append(problems, fmt.Sprintf("option %q value contains NUL", displayName(entry)))
+		if strings.Contains(val, outputDelim) {
+			problems = append(problems, fmt.Sprintf("option %q value contains output delimiter", displayName(entry)))
 			continue
 		}
 		if entry.Type != "list" {
@@ -666,7 +761,14 @@ func validateValue(entry schemaEntry, value string) error {
 		}
 		return fmt.Errorf("must be one of: %s", strings.Join(entry.Enum, ", "))
 	}
-	if entry.CompiledPattern != nil {
+	if entry.BuiltinValidator != nil {
+		if !entry.BuiltinValidator(value) {
+			if entry.Failure != "" {
+				return fmt.Errorf("%s", entry.Failure)
+			}
+			return errors.New("value did not match the expected format")
+		}
+	} else if entry.CompiledPattern != nil {
 		if !entry.CompiledPattern.MatchString(value) {
 			if entry.Failure != "" {
 				return fmt.Errorf("%s", entry.Failure)
@@ -739,9 +841,10 @@ func printUsage(w io.Writer, schema []schemaEntry) error {
 	ew.println("  -V, --version            Print version and exit")
 	ew.println()
 	ew.println("Environment variables:")
-	ew.println("  GO_SHOPTS_UPCASE=1       Output variable names in uppercase")
-	ew.println("  GO_SHOPTS_LIST_DELIM=,   Delimiter for list-type options (default: ',')")
-	ew.println("  GO_SHOPTS_PREFIX=X_      Override output variable prefix (default: 'SHOPTS_')")
+	ew.println("  GO_SHOPTS_UPCASE=1           Output variable names in uppercase")
+	ew.println("  GO_SHOPTS_LIST_DELIM=,       Delimiter for list-type options (default: ',')")
+	ew.println("  GO_SHOPTS_OUT_DELIM=\\t    Field delimiter between key and value in output (default: tab)")
+	ew.println("  GO_SHOPTS_PREFIX=X_          Override output variable prefix (default: 'SHOPTS_')")
 	ew.println()
 	ew.println("Type notes:")
 	ew.println("  int, float, bool: parsed and validated as native Go types")
