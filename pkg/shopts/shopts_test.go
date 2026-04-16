@@ -94,6 +94,26 @@ func TestParseSchema_LongNameRejectsHyphen(t *testing.T) {
 	}
 }
 
+func TestParseSchema_LongNameRejectsLeadingNumber(t *testing.T) {
+	_, err := parseSchema("long=123, type=string;")
+	if err == nil {
+		t.Fatal("expected error for numeric long name")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Fatalf("expected invalid characters error, got: %v", err)
+	}
+}
+
+func TestParseSchema_LongNameRejectsLeadingUnderscore(t *testing.T) {
+	_, err := parseSchema("long=_foo, type=string;")
+	if err == nil {
+		t.Fatal("expected error for underscore-leading long name")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Fatalf("expected invalid characters error, got: %v", err)
+	}
+}
+
 func TestParseSchema_MissingLong(t *testing.T) {
 	_, err := parseSchema("short=x, type=string;")
 	if err == nil {
@@ -192,6 +212,36 @@ func TestParseSchema_NumericRejectsStringConstraints(t *testing.T) {
 				t.Fatal("expected error for string constraint on numeric type")
 			}
 		})
+	}
+}
+
+func TestParseSchema_MaxLengthZeroRejected(t *testing.T) {
+	_, err := parseSchema("long=foo, type=string, maxLength=0;")
+	if err == nil {
+		t.Fatal("expected error for maxLength=0")
+	}
+	if !strings.Contains(err.Error(), "maxLength must be >= 1") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseSchema_ListRejectsMinLength(t *testing.T) {
+	_, err := parseSchema("long=tags, type=list, minLength=3;")
+	if err == nil {
+		t.Fatal("expected error for minLength on list type")
+	}
+	if !strings.Contains(err.Error(), "use minItems/maxItems") {
+		t.Fatalf("expected helpful error, got: %v", err)
+	}
+}
+
+func TestParseSchema_ListRejectsMaxLength(t *testing.T) {
+	_, err := parseSchema("long=tags, type=list, maxLength=10;")
+	if err == nil {
+		t.Fatal("expected error for maxLength on list type")
+	}
+	if !strings.Contains(err.Error(), "use minItems/maxItems") {
+		t.Fatalf("expected helpful error, got: %v", err)
 	}
 }
 

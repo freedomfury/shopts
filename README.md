@@ -91,6 +91,7 @@ short=t, long=tags, type=list, minItems=1, maxItems=5;
 - `flag` options do not accept a value (`-v` sets true, absence is false in output).
 - `--` terminates options and disallows trailing positional args.
 - `-abc` bundles are not supported; only single-letter short options.
+- Option values that look like flags are consumed as values, not parsed as options. For example, `-u --pass` treats `--pass` as the value of `-u`. Use `=` syntax to avoid ambiguity: `-u=--pass`. This follows standard POSIX CLI conventions.
 - Unknown options and invalid schemas produce stderr errors and exit code 1.
 - `GO_SHOPTS_UPCASE` defaults to `1` (default behavior is uppercase output variable names; set `GO_SHOPTS_UPCASE=0` to preserve legacy lowercase names).
 - `GO_SHOPTS_PREFIX` must not start with `GO_SHOPTS_` — that prefix is reserved for internal controls. Attempting to set it will produce an error (exit 1).

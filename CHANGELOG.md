@@ -3,6 +3,19 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.13] - 2026-04-16
+
+### Fixed
+- Long option names must now start with a letter; leading digits or underscores are rejected at schema parse time.
+- `maxLength=0` is now rejected with a clear error (`maxLength must be >= 1`).
+- `list` type now rejects `minLength`/`maxLength` with a helpful error pointing to `minItems`/`maxItems`.
+- `splitEnum` rewritten as a single-pass parser, fixing edge cases where escape sequences inside quoted enum items could be mishandled.
+
+### Changed
+- Documented that option values resembling flags (e.g. `--pass`) are consumed as values, not parsed as options; use `=` syntax (`-u=--pass`) to avoid ambiguity.
+
+---
+
 ## [0.0.12] - 2026-04-04
 
 ### Fixed

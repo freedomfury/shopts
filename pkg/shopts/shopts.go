@@ -339,6 +339,9 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 		if (e.Type == "int" || e.Type == "float" || e.Type == "bool") && (e.MinLength != nil || e.MaxLength != nil || e.Pattern != "") {
 			return nil, fmt.Errorf("option %q: %s type cannot use minLength, maxLength, or pattern", e.Long, e.Type)
 		}
+		if e.Type == "list" && (e.MinLength != nil || e.MaxLength != nil) {
+			return nil, fmt.Errorf("option %q: list type cannot use minLength/maxLength (use minItems/maxItems for item count)", e.Long)
+		}
 		if e.Type == "enum" && len(e.Enum) == 0 {
 			return nil, fmt.Errorf("option %q: enum type must declare enum values", e.Long)
 		}
@@ -356,8 +359,8 @@ func parseSchema(schemaText string) ([]schemaEntry, error) {
 		if e.MinLength != nil && *e.MinLength < 0 {
 			return nil, fmt.Errorf("option %q: minLength must be >= 0", e.Long)
 		}
-		if e.MaxLength != nil && *e.MaxLength < 0 {
-			return nil, fmt.Errorf("option %q: maxLength must be >= 0", e.Long)
+		if e.MaxLength != nil && *e.MaxLength <= 0 {
+			return nil, fmt.Errorf("option %q: maxLength must be >= 1", e.Long)
 		}
 		if e.MinLength != nil && e.MaxLength != nil && *e.MinLength > *e.MaxLength {
 			return nil, fmt.Errorf("option %q: minLength greater than maxLength", e.Long)
@@ -407,10 +410,12 @@ func isValidName(s string) bool {
 	if s == "" {
 		return false
 	}
-	if strings.ContainsAny(s, " \t\n\r\x00=;") {
+	// Long names must start with a letter.
+	first := rune(s[0])
+	if (first < 'a' || first > 'z') && (first < 'A' || first > 'Z') {
 		return false
 	}
-	for _, r := range s {
+	for _, r := range s[1:] {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
 			(r >= '0' && r <= '9') || r == '_' {
 			continue
@@ -579,51 +584,60 @@ func splitFields(line string) ([]string, error) {
 	return out, nil
 }
 
-// splitEnum splits enum values on commas. Individual items may be quoted with
-// double quotes (Go string literal style) when they contain commas or other
-// special characters. Unquoted items are trimmed. Empty items are rejected
-// by the caller during schema validation.
+// splitEnum splits enum values on unquoted commas in a single pass.
+// Individual items may be quoted with double quotes (Go string literal style)
+// when they contain commas or other special characters. Unquoted items are
+// trimmed. Empty items are rejected by the caller during schema validation.
 func splitEnum(s string) ([]string, error) {
-	parts := strings.Split(s, ",")
 	var out []string
-	for i := 0; i < len(parts); i++ {
-		item := strings.TrimSpace(parts[i])
-		if strings.HasPrefix(item, "\"") {
-			// Accumulate parts until we find the closing quote, since the
-			// quoted value itself may contain commas.
-			combined := item
-			for !isQuoteClosed(combined) && i+1 < len(parts) {
-				i++
-				combined += "," + parts[i]
-			}
-			unquoted, err := strconv.Unquote(combined)
+	inQuotes := false
+	esc := false
+	start := 0
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if esc {
+			esc = false
+			continue
+		}
+		if inQuotes && b == '\\' {
+			esc = true
+			continue
+		}
+		if b == '"' {
+			inQuotes = !inQuotes
+			continue
+		}
+		if b == ',' && !inQuotes {
+			item, err := enumItem(s[start:i])
 			if err != nil {
-				return nil, fmt.Errorf("invalid quoted enum item: %s", combined)
+				return nil, err
 			}
-			out = append(out, strings.TrimSpace(unquoted))
-		} else {
 			out = append(out, item)
+			start = i + 1
 		}
 	}
+	if inQuotes {
+		return nil, errors.New("unterminated quoted enum item")
+	}
+	item, err := enumItem(s[start:])
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, item)
 	return out, nil
 }
 
-// isQuoteClosed checks whether a string that starts with " also ends with an
-// unescaped ". This is a quick heuristic used by splitEnum to reassemble
-// quoted items that were split on commas.
-func isQuoteClosed(s string) bool {
-	if len(s) < 2 || s[0] != '"' {
-		return false
+// enumItem trims and unquotes a single enum item.
+func enumItem(raw string) (string, error) {
+	item := strings.TrimSpace(raw)
+	if strings.HasPrefix(item, "\"") {
+		unquoted, err := strconv.Unquote(item)
+		if err != nil {
+			return "", fmt.Errorf("invalid quoted enum item: %s", item)
+		}
+		return strings.TrimSpace(unquoted), nil
 	}
-	if s[len(s)-1] != '"' {
-		return false
-	}
-	// Count trailing backslashes to ensure the closing quote is not escaped.
-	n := 0
-	for i := len(s) - 2; i >= 0 && s[i] == '\\'; i-- {
-		n++
-	}
-	return n%2 == 0
+	return item, nil
 }
 
 func parseArgs(args []string, schema []schemaEntry) (map[string]string, []string) {
