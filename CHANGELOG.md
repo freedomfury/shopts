@@ -3,7 +3,7 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.0.14] - 2026-09-28
 
 Implements the shopts contract spec. Several changes are breaking.
 
