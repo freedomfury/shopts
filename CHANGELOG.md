@@ -3,6 +3,22 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.0.15] - 2026-09-28
+
+Test-only release: no change to the binary's behavior.
+
+### Changed
+- E2E scenarios assert the exact output, exit code and error message instead of only success or failure, through a shared `scripts/test-e2e/lib.sh`. A failing scenario prints its diff and output, and CI now runs the scenarios.
+- `scripts/test.sh` and `scripts/test-extensive.sh` check every parsed value instead of printing it; each `test-extensive.sh` run starts from no `SHOPTS_` variables.
+- `scripts/test-contract.sh` checks stdout byte for byte, including the final newline.
+- Every bash suite and the Go tests clear `GO_SHOPTS_*` settings from the environment first, so exported settings can't change the results.
+- `scripts/TEST.md` rewritten to describe the suites as they are.
+
+### Fixed
+- Two checks in `scripts/test-extensive.sh` (invalid enum, missing required option) printed an error on failure but still passed; they now fail unless shopts exits 3.
+
+---
+
 ## [0.0.14] - 2026-09-28
 
 Implements the shopts contract spec. Several changes are breaking.
