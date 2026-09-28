@@ -14,7 +14,6 @@ short=e, long=enumval, required=false, type=enum, enum="red,green,blue", default
 short=l, long=listval, required=false, type=list, help=Optional list value;
 short=t, long=taglist, required=false, type=list, minItems=1, maxItems=5, help=Tags list with item constraints;
 short=F, long=flagval, required=false, type=flag, help=Optional flag;
-short=T, long=trueflag, required=false, type=flag, default=true, help=Flag that defaults to true;
 short=d, long=defval, required=false, type=string, help=Has a default, default=defaultval;
 short=n, long=nameval, required=false, type=string, minLength=2, maxLength=10, help=Name with length constraints, default=hi;
 short=p, long=patternval, required=false, type=string, pattern=^[a-z]+$, failure=must be lowercase letters only, help=Pattern validated string, default=abc;
@@ -46,7 +45,6 @@ printf 'ENUMVAL=%s\n' "${ENUMVAL}"
 printf 'LISTVAL=%s\n' "${LISTVAL}"
 printf 'TAGLIST=%s\n' "${TAGLIST}"
 printf 'FLAGVAL=%s\n' "${FLAGVAL}"
-printf 'TRUEFLAG=%s\n' "${TRUEFLAG}"
 printf 'DEFVAL=%s\n' "${DEFVAL}"
 printf 'NAMEVAL=%s\n' "${NAMEVAL}"
 printf 'PATTERNVAL=%s\n' "${PATTERNVAL}"
@@ -68,7 +66,6 @@ printf 'ENUMVAL=%s\n' "${ENUMVAL}"
 printf 'LISTVAL=%s\n' "${LISTVAL}"
 printf 'TAGLIST=%s\n' "${TAGLIST}"
 printf 'FLAGVAL=%s\n' "${FLAGVAL}"
-printf 'TRUEFLAG=%s\n' "${TRUEFLAG}"
 printf 'DEFVAL=%s\n' "${DEFVAL}"
 printf 'NAMEVAL=%s\n' "${NAMEVAL}"
 printf 'PATTERNVAL=%s\n' "${PATTERNVAL}"
@@ -187,19 +184,15 @@ else
   exit 1
 fi
 
-echo "--- flag default=true (not passed) ---"
-trueflag_val=""
-while IFS=$'\t' read -r k v; do
-  if [[ "${k}" == "SHOPTS_TRUEFLAG" ]]; then
-    trueflag_val="${v}"
-    break
-  fi
-done < <("${binary}" "${SCHEMA}" -s test -t one)
-
-if [[ "${trueflag_val}" == "true" ]]; then
-  echo "PASS: flag default=true emits true when not passed."
+echo "--- flag with a default is a schema error (exit 2) ---"
+set +e
+"${binary}" 'short=T, long=trueflag, type=flag, default=true;' >/dev/null 2>&1
+rc=$?
+set -e
+if [[ ${rc} -eq 2 ]]; then
+  echo "PASS: flag default rejected with exit 2."
 else
-  echo "FAIL: flag default=true did not emit true (got: ${trueflag_val})"
+  echo "FAIL: flag default not rejected (exit ${rc})"
   exit 1
 fi
 

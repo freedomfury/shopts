@@ -3,6 +3,47 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Implements the shopts contract spec. Several changes are breaking.
+
+### Added
+- Positional arguments: `positional=1`, `2`, … binds bare arguments; `positional=rest` collects the remainder into a list. Everything after `--` is bare.
+- `min`/`max` inclusive bounds for `int` and `float`.
+- `define` entries declare named patterns usable as `{{ Name }}`.
+- `GO_SHOPTS_NAME` sets the program name shown in help and errors.
+- Named delimiters for `GO_SHOPTS_OUT_DELIM` and `GO_SHOPTS_LIST_DELIM`, written like validators: `{{ tab }}` and `{{ null }}` (a NUL byte, which no argument can contain, so every value reads back exactly).
+- `GO_SHOPTS_DASH` (default `1`): long names are typed with dashes, so `long=dry_run` is `--dry-run`. Set to `0` to type names as written. Output names are unchanged, and a mistyped spelling gets a "did you mean" hint.
+- Each built-in validator has its own failure message. The README validator table is generated from the registry (`make readme`).
+- `scripts/test-contract.sh`: acceptance suite with checks for each item of the spec.
+
+### Changed
+- `-V`/`--version` ignores the schema and settings, so it works even when they are broken. `-H`/`--help` needs a valid schema but ignores settings it doesn't show. An internal error (panic) exits 1 instead of Go's default 2, which would look like a schema error.
+- **Breaking:** `-H`/`--help` and `-V`/`--version` exit 7 instead of 0, so callers can tell help apart from a successful parse. `--version` now prints to stderr and works from any position.
+- **Breaking:** Help describes the caller's script only: the `Usage: shopts SCHEMA` header, the `GO_SHOPTS_` variable list and the type notes are gone; positionals are listed.
+- **Breaking:** Inline regexes must match the whole value (`pattern=[0-9]+` rejects `abc1`).
+- **Breaking:** Quoted schema values use a new rule: only `\"` and `\\` are escapes, so `pattern="^\d+$"` works. Go escapes such as `\n` are no longer interpreted.
+- **Breaking:** Long names containing `_` are typed with dashes by default (`--dry-run`, not `--dry_run`). Set `GO_SHOPTS_DASH=0` for the old spelling.
+- **Breaking:** A flag is `true` when given and `false` when not: it cannot have a `default` or be `required=true`. For on-by-default behavior, name the flag for turning it off (`long=no_cache`, typed `--no-cache`). No `--no-` form is implied; to accept both spellings, declare both flags.
+- **Breaking:** `required=` accepts only `true` or `false`. A field given twice in one entry is an error. An unquoted value can no longer continue onto the next line.
+- **Breaking:** Repeating a flag is an error, like any other non-list option.
+- **Breaking:** `bool` values are emitted as `true`/`false` and `int` values as plain decimal (`007` → `7`).
+- **Breaking:** `GO_SHOPTS_UPCASE` and `GO_SHOPTS_DASH` must be booleans, and invalid settings exit 1.
+- Values may now contain the output delimiter: the first delimiter on a line always ends the key, since keys never contain it. Only newlines are rejected. `GO_SHOPTS_OUT_DELIM` and `GO_SHOPTS_LIST_DELIM` may be any string without a newline.
+- Schema errors report line and column (`schema line 4, col 23: unknown field "patern"`), with a suggestion for misspelled fields.
+- Argument errors are printed one per line, followed by the usage line, instead of the full help.
+- `minLength`/`maxLength` count characters (Unicode code points), not bytes.
+- The schema is parsed by a single-pass lexer built on `text/scanner`; the package is split into one file per concern.
+- README corrected where it disagreed with the code (exit codes, `long` characters, `bool` values, "exported", "no subshells", POSIX `-u=value`, `pattern` on lists, `bin/`), and notes that the `wait $!` idiom needs bash 4.4 or later.
+
+### Fixed
+- `RelativePath` accepts `config/file.yaml`; `PortNumber` rejects `+80` and leading zeros; `GitRef` follows git's ref naming rules; `IPv6Address` accepts IPv4-mapped addresses.
+
+### Removed
+- `docs/review.md` (stale).
+
+---
+
 ## [0.0.13] - 2026-04-16
 
 ### Fixed

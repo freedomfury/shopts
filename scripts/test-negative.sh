@@ -23,60 +23,38 @@ if [[ ! -x "${binary}" ]]; then
   go build -o "${binary}" ./cmd/shopts
 fi
 
-"${binary}" "${SCHEMA}" --help 2>"${help_out}"
+rc=0
+GO_SHOPTS_NAME=login.sh "${binary}" "${SCHEMA}" --help >/dev/null 2>"${help_out}" || rc=$?
+if [[ ${rc} -ne 7 ]]; then
+  echo "expected --help to exit 7, got ${rc}" >&2
+  exit 1
+fi
 cat >"${help_expected}" <<'EOF'
-Usage: shopts SCHEMA [OPTIONS]
+Usage: login.sh [OPTIONS]
 
 Options:
   -u, --username <value>   Username for login; string; required; minimum length: 3
                            The username to authenticate with the system.
   -p, --pass <value>       Password for login; string; required; minimum length: 6
-  -v, --verbose            Enable verbose output; flag (boolean switch)
+  -v, --verbose            Enable verbose output; flag
   -m, --mode <value>       Execution mode; enum; default: dev; allowed: dev, prod
-  -H, --help               Show schema-derived usage and exit
-  -V, --version            Print version and exit
-
-Environment variables:
-  GO_SHOPTS_UPCASE=1           Output variable names in uppercase
-  GO_SHOPTS_LIST_DELIM=,       Delimiter for list-type options (default: ',')
-  GO_SHOPTS_OUT_DELIM=\t    Field delimiter between key and value in output (default: tab)
-  GO_SHOPTS_PREFIX=X_          Override output variable prefix (default: 'SHOPTS_')
-
-Type notes:
-  int, float, bool: parsed and validated as native Go types
-  list: option may be repeated, values joined by delimiter
+  -H, --help               Show this help
 EOF
 
 diff -u "${help_expected}" "${help_out}"
 
-if "${binary}" "${SCHEMA}" -u al -p x >/dev/null 2>"${err_out}"; then
-  echo "expected validation failure" >&2
+rc=0
+GO_SHOPTS_NAME=login.sh "${binary}" "${SCHEMA}" -u al -p x >/dev/null 2>"${err_out}" || rc=$?
+if [[ ${rc} -ne 3 ]]; then
+  echo "expected validation failure to exit 3, got ${rc}" >&2
   exit 1
 fi
 
 cat >"${err_expected}" <<'EOF'
-Usage: shopts SCHEMA [OPTIONS]
-
-Options:
-  -u, --username <value>   Username for login; string; required; minimum length: 3
-                           The username to authenticate with the system.
-  -p, --pass <value>       Password for login; string; required; minimum length: 6
-  -v, --verbose            Enable verbose output; flag (boolean switch)
-  -m, --mode <value>       Execution mode; enum; default: dev; allowed: dev, prod
-  -H, --help               Show schema-derived usage and exit
-  -V, --version            Print version and exit
-
-Environment variables:
-  GO_SHOPTS_UPCASE=1           Output variable names in uppercase
-  GO_SHOPTS_LIST_DELIM=,       Delimiter for list-type options (default: ',')
-  GO_SHOPTS_OUT_DELIM=\t    Field delimiter between key and value in output (default: tab)
-  GO_SHOPTS_PREFIX=X_          Override output variable prefix (default: 'SHOPTS_')
-
-Type notes:
-  int, float, bool: parsed and validated as native Go types
-  list: option may be repeated, values joined by delimiter
-
-option "--username" invalid: must be at least 3 characters long; option "--pass" invalid: must be at least 6 characters long
+login.sh: invalid value for --username: must be at least 3 characters long
+login.sh: invalid value for --pass: must be at least 6 characters long
+Usage: login.sh [OPTIONS]
+Try 'login.sh --help' for more information.
 EOF
 
 diff -u "${err_expected}" "${err_out}"

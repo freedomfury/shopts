@@ -2,7 +2,7 @@ VERSION := $(shell cat VERSION)
 BINARY  := bin/shopts
 N       := 100
 
-.PHONY: all clean test test-go test-bash test-e2e test-all benchmark compare lint lint-go lint-bash lint-all tag clean-tag release
+.PHONY: all clean test test-go test-bash test-e2e test-all benchmark compare lint lint-go lint-bash lint-all readme tag clean-tag release
 
 all: test
 
@@ -19,10 +19,14 @@ test: $(BINARY) test-go test-bash
 test-go:
 	go test -race ./...
 
-test-bash:
+test-bash: $(BINARY)
 	./scripts/test.sh
 	./scripts/test-negative.sh
 	./scripts/test-extensive.sh
+	./scripts/test-contract.sh
+
+readme:
+	go test ./pkg/shopts -run TestREADMETables -update
 
 test-e2e: $(BINARY)
 	@scripts/run-e2e-tests.sh bin/shopts
@@ -44,15 +48,10 @@ lint: lint-bash lint-go
 lint-all:
 	$(MAKE) -j2 lint-bash lint-go
 
+# Every shell script in the repo, committed or not (ignored files excluded).
 lint-bash:
 	@echo "Linting bash scripts..."
-	shellcheck -x scripts/test.sh
-	shellcheck -x scripts/test-negative.sh
-	shellcheck -x scripts/test-extensive.sh
-	shellcheck -x scripts/run-e2e-tests.sh
-	find scripts/test-e2e -name '*.sh' -exec shellcheck -x {} +
-	find bench -name '*.sh' -exec shellcheck -x {} +
-	find bin -name '*.sh' -exec shellcheck -x {} +
+	git ls-files -z --cached --others --exclude-standard -- '*.sh' | xargs -0 shellcheck -x
 
 compare: $(BINARY)
 	./bench/compare.sh $(N) -u alice -p s3cr3tpass
