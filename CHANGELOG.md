@@ -3,6 +3,35 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Tests
+- `shopts -H`/`--help` without a schema is tested.
+- The contract suite covers a missing schema, tool-level `--help`, reserved `long=help`/`long=version`, a field given twice in an option entry, and invalid `GO_SHOPTS_PREFIX` / `GO_SHOPTS_LIST_DELIM`.
+- The README help sample is generated from the help code and checked by `go test` (`make readme` regenerates it).
+
+### Changed
+- Internal cleanup with no change to what shopts accepts or prints on success. Three error messages read slightly differently:
+  - A flag with `default=` points at the `default` field name rather than its value.
+  - A list default with the wrong item count says `default allows at most 1 items, got 2` (was `default has 2 items; allowed 0 to 1`).
+  - A list with the wrong item count reports only the count, not also its individual items.
+
+### Planned
+Performance work measured in the code review, not done yet:
+- Compile the built-in validator regexes only when a schema uses them (about 0.2 ms less per call).
+- Parse `CIDRBlock` with `net/netip` to drop the `net` import, so `make build` produces a static binary (about 0.4 ms less on that build).
+- Read schema text without copying it one character at a time (parsing is about 2x slower than the pre-0.0.14 splitters, about 30 µs).
+- Build schema entries with fewer allocations (no reordering copy, no per-entry position map).
+- Reuse one temporary file in `scripts/test-contract.sh` instead of creating one per check.
+
+### Parked
+Ideas discussed and deliberately left for later:
+- Leftover arguments (`GO_SHOPTS_ARGS`): collecting bare words instead of rejecting them.
+- Making the two delimiter settings consistent. Today both accept a literal string or `{{ tab }}` / `{{ null }}`; a NUL list delimiter produces values a bash variable cannot hold.
+- From the spec: short option bundling (`-abc`), attached values (`-n5`), and list items containing the list delimiter.
+
+---
+
 ## [0.0.16] - 2026-09-28
 
 ### Removed
