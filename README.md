@@ -236,6 +236,7 @@ Exit 7 lets your script tell "help was shown" apart from "parsed successfully". 
 
 `-H`/`--help` prints usage generated from the schema to stderr and exits 7. It stays on stderr because stdout is the data channel. Help describes your script only: its name (from `GO_SHOPTS_NAME`) and its options.
 
+<!-- help-example:begin (generated from pkg/shopts/help.go; run make readme) -->
 ```
 Usage: deploy.sh [OPTIONS]
 
@@ -244,6 +245,7 @@ Options:
   -v, --verbose       Verbose output; flag
   -H, --help          Show this help
 ```
+<!-- help-example:end -->
 
 `-V`/`--version` prints the shopts version to stderr and exits 7, from any position in the arguments. `shopts --version` with no schema works too.
 

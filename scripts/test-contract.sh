@@ -247,6 +247,17 @@ long=release, type=string, pattern={{ SemVer }}, default=1.0.0;
 long=host,    type=string, pattern={{ IPv4Address }}, required=true;
 ' --host 10.0.0.1
 
+echo "--- Schema and settings edge cases ---"
+run
+if [[ ${RC} -eq 2 && -z "${OUT}" && "${ERR}" == *"missing schema"* ]]; then pass; else fail "no schema argument is a schema error"; fi
+err "tool-level --help without a schema" 7 "usage: shopts SCHEMA [ARGS...]" --help
+err "long=help is reserved" 2 '"help" is reserved' 'long=help, type=flag;'
+err "long=version is reserved" 2 '"version" is reserved' 'long=version, type=flag;'
+err "a field given twice in an option entry" 2 'field "type" is given twice' 'long=a, type=string, type=int;'
+envrun "GO_SHOPTS_PREFIX must be a shell prefix" 1 "not a valid shell variable prefix" GO_SHOPTS_PREFIX=1BAD -- "${S}"
+envrun "GO_SHOPTS_LIST_DELIM cannot contain a newline" 1 "must not contain a newline" "GO_SHOPTS_LIST_DELIM=a
+b" -- "${S}"
+
 echo "--- Code review leftovers ---"
 err "unknown field has no suggestion" 2 'unknown field "patern"' 'long=a, type=string, patern=x;'
 run 'long=a, type=string, patern=x;'

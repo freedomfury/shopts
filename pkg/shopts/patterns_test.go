@@ -58,6 +58,19 @@ func delimiterTable() string {
 	return b.String()
 }
 
+// helpExample is the README's help sample, generated from helpText so it
+// cannot drift from the real output.
+func helpExample() string {
+	s, err := parseSchema(`
+		short=e, long=env, type=enum, enum="dev,prod", required=true, help=Target;
+		short=v, long=verbose, type=flag, help=Verbose output;
+	`)
+	if err != nil {
+		panic(err)
+	}
+	return "```\n" + helpText(s, "deploy.sh") + "```\n"
+}
+
 // TestREADMETables keeps the generated README tables in step with the code.
 // Regenerate them with: make readme
 func TestREADMETables(t *testing.T) {
@@ -70,6 +83,7 @@ func TestREADMETables(t *testing.T) {
 	for _, table := range []struct{ name, source, want string }{
 		{"validators", "pkg/shopts/patterns.go", validatorTable()},
 		{"delimiters", "pkg/shopts/run.go", delimiterTable()},
+		{"help-example", "pkg/shopts/help.go", helpExample()},
 	} {
 		begin := "<!-- " + table.name + ":begin (generated from " + table.source + "; run make readme) -->"
 		end := "<!-- " + table.name + ":end -->"

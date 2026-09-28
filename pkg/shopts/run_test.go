@@ -175,6 +175,12 @@ func TestRunToolLevel(t *testing.T) {
 			t.Fatalf("%s: code %d, stderr %q", arg, code, errOut.String())
 		}
 	}
+	for _, arg := range []string{"-H", "--help"} {
+		errOut.Reset()
+		if code := Run([]string{"shopts", arg}, &out, &errOut, "v1"); code != ExitStop || !strings.HasPrefix(errOut.String(), "usage: shopts SCHEMA [ARGS...]\n") {
+			t.Fatalf("%s: code %d, stderr %q", arg, code, errOut.String())
+		}
+	}
 	if out.Len() != 0 {
 		t.Fatalf("stdout must stay empty, got %q", out.String())
 	}
