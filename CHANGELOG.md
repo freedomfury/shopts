@@ -5,17 +5,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Tests
-- `shopts -H`/`--help` without a schema is tested.
-- The contract suite covers a missing schema, tool-level `--help`, reserved `long=help`/`long=version`, a field given twice in an option entry, and invalid `GO_SHOPTS_PREFIX` / `GO_SHOPTS_LIST_DELIM`.
-- The README help sample is generated from the help code and checked by `go test` (`make readme` regenerates it).
-
-### Changed
-- Internal cleanup with no change to what shopts accepts or prints on success. Three error messages read slightly differently:
-  - A flag with `default=` points at the `default` field name rather than its value.
-  - A list default with the wrong item count says `default allows at most 1 items, got 2` (was `default has 2 items; allowed 0 to 1`).
-  - A list with the wrong item count reports only the count, not also its individual items.
-
 ### Planned
 Performance work measured in the code review, not done yet:
 - Compile the built-in validator regexes only when a schema uses them (about 0.2 ms less per call).
@@ -29,6 +18,21 @@ Ideas discussed and deliberately left for later:
 - Leftover arguments (`GO_SHOPTS_ARGS`): collecting bare words instead of rejecting them.
 - Making the two delimiter settings consistent. Today both accept a literal string or `{{ tab }}` / `{{ null }}`; a NUL list delimiter produces values a bash variable cannot hold.
 - From the spec: short option bundling (`-abc`), attached values (`-n5`), and list items containing the list delimiter.
+
+---
+
+## [0.0.17] - 2026-09-28
+
+### Tests
+- `shopts -H`/`--help` without a schema is tested.
+- The contract suite covers a missing schema, tool-level `--help`, reserved `long=help`/`long=version`, a field given twice in an option entry, and invalid `GO_SHOPTS_PREFIX` / `GO_SHOPTS_LIST_DELIM`.
+- The README help sample is generated from the help code and checked by `go test` (`make readme` regenerates it).
+
+### Changed
+- Internal cleanup with no change to what shopts accepts or prints on success. Three error messages read slightly differently:
+  - A flag with `default=` points at the `default` field name rather than its value.
+  - A list default with the wrong item count says `default allows at most 1 items, got 2` (was `default has 2 items; allowed 0 to 1`).
+  - A list with the wrong item count reports only the count, not also its individual items.
 
 ---
 
