@@ -61,7 +61,7 @@ func TestSchemaFormat(t *testing.T) {
 		short=v,long=verbose,type=flag,help=Verbose output;
 		long=multi,
 		  type=string,
-		  help="spans
+		  description="spans
 		  lines";
 	`)
 	if len(s.entries) != 3 {
@@ -79,7 +79,7 @@ func TestSchemaErrorPositions(t *testing.T) {
 	cases := []struct {
 		name, schema, want string
 	}{
-		{"unknown field", "long=a, type=string;\n  long=b, type=string, patern=x;", `schema line 2, col 24: unknown field "patern" (did you mean "pattern"?)`},
+		{"unknown field", "long=a, type=string;\n  long=b, type=string, patern=x;", `schema line 2, col 24: unknown field "patern"`},
 		{"indented schema keeps original columns", "\n    long=a, type=strng;", `schema line 2, col 18: type: "strng" is not a type`},
 		{"missing semicolon", "long=a, type=string;\nlong=b, type=int", `schema line 2, col 1: entry is missing its terminating ';'`},
 		{"unterminated quote", `long=a, type=string, help="oops;`, `schema line 1, col 27: quoted value is never closed`},
@@ -89,6 +89,10 @@ func TestSchemaErrorPositions(t *testing.T) {
 		{"empty field", `long=a,, type=string;`, `schema line 1, col 8: expected a field name`},
 		{"empty bare value, value on next line", "long=a, type=string, help=\n  pattern=[a-z]+;", `schema line 1, col 27: value of "help" is missing on this line`},
 		{"bare value over lines", "long=a, type=string, help=one\nlong=b, type=int;", `schema line 1, col 30: unquoted value of "help" runs onto the next line`},
+		{"invalid UTF-8 at its column", "long=a, type=string, help=caf\xe9;", "schema line 1, col 30: schema is not valid UTF-8"},
+		{"invalid UTF-8 as the first byte", "\xfflong=a, type=string;", "schema line 1, col 1: schema is not valid UTF-8"},
+		{"byte order mark", "\uFEFFlong=a, type=string;", "schema line 1, col 1: schema starts with a byte order mark"},
+		{"end of schema on an indented blank line", "\n      long=a, type=string,\n    ", "schema line 3, col 5: expected a field name, found end of schema"},
 		{"cross-field check at field", "long=a, type=string,\n  required=true, default=x;", `schema line 2, col 26: option "a": required and default cannot both be set`},
 	}
 	for _, tc := range cases {
@@ -107,6 +111,13 @@ func TestSchemaRules(t *testing.T) {
 		{"long hyphen", "long=dry-run, type=flag;", "must start with a letter"},
 		{"long digit", "long=1a, type=flag;", "must start with a letter"},
 		{"long underscore", "long=_a, type=flag;", "must start with a letter"},
+		{"long go_shopts reserved", "long=go_shopts_x, type=flag;", "names starting with go_shopts belong to shopts"},
+		{"long GO_SHOPTS reserved, any case", "long=Go_Shopts, type=flag;", "names starting with go_shopts belong to shopts"},
+		{"help on two lines", "long=a, type=flag, help=\"one\ntwo\";", "help: must be a single line"},
+		{"failure on two lines", "long=a, type=string, pattern=x, failure=\"one\ntwo\";", "failure: must be a single line"},
+		{"count with leading zero", "long=a, type=list, maxItems=01;", `must be a whole number of at least 0, got "01"`},
+		{"count with sign", "long=a, type=string, minLength=+2;", `must be a whole number of at least 0, got "+2"`},
+		{"positional is gone", "long=a, type=string, positional=1;", `unknown field "positional"`},
 		{"long help reserved", "long=help, type=flag;", "reserved"},
 		{"long version reserved", "long=version, type=flag;", "reserved"},
 		{"short H reserved", "long=a, short=H, type=flag;", "reserved"},
@@ -154,39 +165,6 @@ func TestSchemaRules(t *testing.T) {
 	}
 }
 
-func TestPositionalRules(t *testing.T) {
-	s := mustParse(t, `
-		long=target, type=string, positional=1, required=true;
-		long=region, type=string, positional=2;
-		long=files, type=list, positional=rest;
-	`)
-	if len(s.positionals) != 2 || s.positionals[0].long != "target" || s.positionals[1].long != "region" {
-		t.Fatalf("positionals out of order: %+v", s.positionals)
-	}
-	if s.rest == nil || s.rest.long != "files" {
-		t.Fatal("rest not set")
-	}
-
-	cases := []struct {
-		name, schema, want string
-	}{
-		{"on int", "long=a, type=int, positional=1;", `does not apply to type int`},
-		{"zero", "long=a, type=string, positional=0;", "must be 1, 2, ... or rest"},
-		{"leading zero", "long=a, type=string, positional=01;", "must be 1, 2, ... or rest"},
-		{"gap", "long=a, type=string, positional=1; long=b, type=string, positional=3;", "positional=2 is missing"},
-		{"dup", "long=a, type=string, positional=1; long=b, type=string, positional=1;", "positional=1 is already used"},
-		{"rest not list", "long=a, type=string, positional=rest;", "positional=rest needs type=list"},
-		{"list numbered", "long=a, type=list, positional=1;", "use positional=rest"},
-		{"two rests", "long=a, type=list, positional=rest; long=b, type=list, positional=rest;", "only one entry can be positional=rest"},
-		{"short on positional", "long=a, short=a, type=string, positional=1;", "cannot have a short flag"},
-		{"required after optional", "long=a, type=string, positional=1; long=b, type=string, positional=2, required=true;", "cannot follow the optional positional"},
-		{"required rest after optional", "long=a, type=string, positional=1; long=b, type=list, positional=rest, required=true;", "cannot follow the optional positional"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) { schemaErr(t, tc.schema, tc.want) })
-	}
-}
-
 func TestDefine(t *testing.T) {
 	s := mustParse(t, `
 		long=ticket, type=string, pattern={{ Ticket }};
@@ -208,7 +186,8 @@ func TestDefine(t *testing.T) {
 		{"bad name", "define=my_pat, pattern=x; long=a, type=flag;", "must start with a letter and contain only letters and digits"},
 		{"no pattern", "define=X; long=a, type=flag;", `define "X" has no pattern`},
 		{"other field", "define=X, pattern=x, help=h; long=a, type=flag;", `field "help" is not allowed in a define entry`},
-		{"misspelled field", "define=X, patern=x; long=a, type=flag;", `(did you mean "pattern"?)`},
+		{"misspelled field", "define=X, patern=x; long=a, type=flag;", `field "patern" is not allowed in a define entry`},
+		{"failure on two lines", "define=X, pattern=x, failure=\"one\ntwo\"; long=a, type=flag;", "failure: must be a single line"},
 		{"field twice", "define=X, pattern=[a-z]+, pattern=[0-9]+; long=a, type=flag;", `field "pattern" is given twice`},
 		{"define twice", "define=X, define=Y, pattern=x; long=a, type=flag;", `field "define" is given twice`},
 		{"template", "define=X, pattern={{ SemVer }}; long=a, type=flag;", "must be a regex"},

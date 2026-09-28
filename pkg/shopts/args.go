@@ -3,12 +3,14 @@ package shopts
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // scanned is argv sorted into raw values, before defaults and validation.
 type scanned struct {
 	help, version bool
 	values        map[*entry][]string // every occurrence given, by entry
+	failed        map[*entry]bool     // options given in a broken form, already reported
 	errs          []string
 }
 
@@ -16,14 +18,11 @@ type scanned struct {
 // arguments (known options, values present, no repeats); values are
 // validated later.
 func scan(s *schema, args []string) scanned {
-	sc := scanned{values: map[*entry][]string{}}
+	sc := scanned{values: map[*entry][]string{}, failed: map[*entry]bool{}}
 
 	byLong := map[string]*entry{}
 	byShort := map[string]*entry{}
 	for _, e := range s.entries {
-		if e.positional != 0 {
-			continue
-		}
 		byLong[e.name] = e
 		if e.short != "" {
 			byShort[e.short] = e
@@ -53,30 +52,28 @@ func scan(s *schema, args []string) scanned {
 		}
 	}
 
-	var bare []string
+	// Every argument must be an option or an option's value. Bare words, and
+	// anything after "--", are rejected: accepting them would silently hide
+	// mistakes such as a forgotten dash or unquoted spaces.
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
-			bare = append(bare, args[i+1:]...)
+			for _, rest := range args[i+1:] {
+				sc.errs = append(sc.errs, fmt.Sprintf("unrecognized bare word %q after --", rest))
+			}
 			break
 		}
 		if len(arg) < 2 || arg[0] != '-' {
-			bare = append(bare, arg)
+			sc.errs = append(sc.errs, fmt.Sprintf("unrecognized bare word %q", arg))
 			continue
 		}
 
 		name, value, inline := strings.Cut(arg, "=")
 		var e *entry
-		if strings.HasPrefix(name, "--") {
+		if !isASCII(name) {
+			// Option names are ASCII; anything else cannot match one.
+		} else if strings.HasPrefix(name, "--") {
 			e = byLong[name[2:]]
-			if e == nil {
-				// Suggest the other spelling: --dry_run for --dry-run and back.
-				alt := strings.NewReplacer("_", "-", "-", "_").Replace(name[2:])
-				if byLong[alt] != nil {
-					sc.errs = append(sc.errs, fmt.Sprintf("unknown option %s (did you mean --%s?)", name, alt))
-					continue
-				}
-			}
 		} else if len(name) > 2 {
 			sc.errs = append(sc.errs, fmt.Sprintf("short options cannot be combined: %s", name))
 			continue
@@ -91,6 +88,7 @@ func scan(s *schema, args []string) scanned {
 		switch {
 		case e.typ == "flag" && inline:
 			sc.errs = append(sc.errs, fmt.Sprintf("%s does not take a value", name))
+			sc.failed[e] = true
 			continue
 		case e.typ == "flag":
 			value = "true"
@@ -99,6 +97,7 @@ func scan(s *schema, args []string) scanned {
 			value = args[i]
 		case !inline:
 			sc.errs = append(sc.errs, fmt.Sprintf("%s requires a value", name))
+			sc.failed[e] = true
 			continue
 		}
 
@@ -109,27 +108,19 @@ func scan(s *schema, args []string) scanned {
 		sc.values[e] = append(sc.values[e], value)
 	}
 
-	for i, arg := range bare {
-		switch {
-		case i < len(s.positionals):
-			sc.values[s.positionals[i]] = []string{arg}
-		case s.rest != nil:
-			sc.values[s.rest] = append(sc.values[s.rest], arg)
-		default:
-			sc.errs = append(sc.errs, fmt.Sprintf("unexpected argument %q", arg))
-		}
-	}
 	return sc
 }
 
-// displayName is how errors and help refer to an entry.
+// displayName is how errors refer to an option.
 func displayName(e *entry) string {
-	switch e.positional {
-	case 0:
-		return "--" + e.name
-	case restPositional:
-		return "<" + e.name + "...>"
-	default:
-		return "<" + e.name + ">"
+	return "--" + e.name
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
 	}
+	return true
 }

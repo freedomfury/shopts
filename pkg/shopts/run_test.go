@@ -30,16 +30,14 @@ const deploySchema = `
 	short=e, long=env, type=enum, enum="dev,prod", required=true, help=Target;
 	short=v, long=verbose, type=flag, help=Verbose output;
 	short=p, long=port, type=int, min=1, max=65535, default=8080, help=Port;
-	long=target, type=string, positional=1, required=true, help=Deploy target;
-	long=files, type=list, positional=rest, help=Files to process;
 `
 
 func TestRunOutput(t *testing.T) {
-	out, errOut, code := run(t, deploySchema, "web", "-e", "prod", "--port=0443", "a.txt", "b.txt")
+	out, errOut, code := run(t, deploySchema, "-e", "prod", "--port=0443")
 	if code != ExitOK {
 		t.Fatalf("code %d, stderr %q", code, errOut)
 	}
-	want := "SHOPTS_ENV\tprod\nSHOPTS_VERBOSE\tfalse\nSHOPTS_PORT\t443\nSHOPTS_TARGET\tweb\nSHOPTS_FILES\ta.txt,b.txt\n"
+	want := "SHOPTS_ENV\tprod\nSHOPTS_VERBOSE\tfalse\nSHOPTS_PORT\t443\n"
 	if out != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
 	}
@@ -87,24 +85,24 @@ func TestRunErrorsWriteNothingToStdout(t *testing.T) {
 		code   int
 		stderr string
 	}{
-		{"missing required", deploySchema, []string{"-e", "dev"}, ExitArgs, "error: missing required argument <target>"},
-		{"missing required option", deploySchema, []string{"web"}, ExitArgs, "error: missing required option --env"},
-		{"bad value", deploySchema, []string{"web", "-e", "qa"}, ExitArgs, "invalid value for --env: must be one of: dev, prod"},
-		{"bad positional", "long=t, type=string, positional=1, pattern=[a-z]+;", []string{"UP"}, ExitArgs, "invalid value for <t>: must match the pattern [a-z]+"},
-		{"bad rest item", "long=f, type=list, positional=rest, pattern=[a-z]+;", []string{"ok", "UP"}, ExitArgs, "invalid value for <f...>: must match"},
+		{"missing required option", deploySchema, nil, ExitArgs, "error: missing required option --env"},
+		{"bad value", deploySchema, []string{"-e", "qa"}, ExitArgs, "invalid value for --env: must be one of: dev, prod"},
+		{"bare word", deploySchema, []string{"-e", "dev", "web"}, ExitArgs, `error: unrecognized bare word "web"`},
+		{"after --", deploySchema, []string{"-e", "dev", "--", "-x"}, ExitArgs, `error: unrecognized bare word "-x" after --`},
+		{"bad list item", "long=f, type=list, pattern=[a-z]+;", []string{"--f", "ok", "--f", "UP"}, ExitArgs, "invalid value for --f: must match"},
 		{"list too few", "long=t, type=list, minItems=2;", []string{"--t", "a"}, ExitArgs, "--t needs at least 2 items, got 1"},
 		{"list too many", "long=t, type=list;", repeat("--t=x", 101), ExitArgs, "--t allows at most 100 items, got 101"},
 		{"required list implicit min", "long=t, type=list, required=true;", nil, ExitArgs, "missing required option --t"},
 		{"required empty", "long=t, type=string, required=true;", []string{"--t="}, ExitArgs, "--t requires a non-empty value"},
 		{"required list empty", "long=t, type=list, required=true;", []string{"--t="}, ExitArgs, "--t requires a non-empty value"},
-		{"required rest empty", "long=f, type=list, positional=rest, required=true;", []string{""}, ExitArgs, "<f...> requires a non-empty value"},
 		{"newline", "long=t, type=string;", []string{"--t=a\nb"}, ExitArgs, "must not contain a newline"},
 		{"all errors reported", deploySchema, []string{"--nope", "-e", "qa", "-p", "x"}, ExitArgs, "unknown option --nope\nerror: invalid value for --env"},
 		{"schema error", "long=a, type=nope;", nil, ExitSchema, "shopts: schema line 1, col 14"},
 		{"schema error before help", "long=a, type=nope;", []string{"-H"}, ExitSchema, "schema line"},
-		{"help", deploySchema, []string{"-H"}, ExitStop, "Usage: [OPTIONS] <target> [files...]"},
+		{"help", deploySchema, []string{"-H"}, ExitStop, "Usage: [OPTIONS]\n"},
 		{"help anywhere", deploySchema, []string{"web", "--bogus", "--help"}, ExitStop, "Options:"},
 		{"version anywhere", deploySchema, []string{"web", "-V"}, ExitStop, "shopts v1.2.3\n"},
+		{"missing value reported once", "long=a, type=string, required=true;", []string{"--a"}, ExitArgs, "error: --a requires a value\nUsage:"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,8 +132,7 @@ func TestRunArgErrorFormat(t *testing.T) {
 	t.Setenv("GO_SHOPTS_NAME", "deploy.sh")
 	_, errOut, _ := run(t, deploySchema, "-e", "qa")
 	want := "deploy.sh: invalid value for --env: must be one of: dev, prod\n" +
-		"deploy.sh: missing required argument <target>\n" +
-		"Usage: deploy.sh [OPTIONS] <target> [files...]\n" +
+		"Usage: deploy.sh [OPTIONS]\n" +
 		"Try 'deploy.sh --help' for more information.\n"
 	if errOut != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", errOut, want)
@@ -151,11 +148,7 @@ func TestRunHelp(t *testing.T) {
 	if code != ExitStop {
 		t.Fatalf("code %d", code)
 	}
-	want := `Usage: deploy.sh [OPTIONS] <target> [files...]
-
-Arguments:
-  <target>             Deploy target; string; required
-  [files...]           Files to process; list
+	want := `Usage: deploy.sh [OPTIONS]
 
 Options:
   -e, --env <value>    Target; enum; required; allowed: dev, prod

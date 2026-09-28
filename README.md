@@ -57,8 +57,6 @@ Each entry is a set of `key=value` fields separated by commas (the space after t
 SCHEMA='
 short=e, long=env, type=enum, enum="dev,prod", required=true, help=Target;
 short=v, long=verbose, type=flag, help=Verbose output;
-long=target, type=string, positional=1, required=true, help=Deploy target;
-long=files, type=list, positional=rest, help=Files to process;
 '
 ```
 
@@ -73,30 +71,29 @@ Inside double quotes only two sequences are special: `\"` is a literal quote and
 | `pattern="^C:\\\\"` | `^C:\\` |
 | `pattern=^\d+$` (unquoted) | `^\d+$` |
 
-Schema errors give the line and column, counted in the schema text as you wrote it:
+The schema must be UTF-8 text, without a byte order mark. Schema errors give the line and column, counted in the schema text as you wrote it:
 
 ```
-shopts: schema line 4, col 23: unknown field "patern" (did you mean "pattern"?)
+shopts: schema line 4, col 23: unknown field "patern"
 ```
 
 ### Fields
 
 | Field | Applies to | Meaning |
 |---|---|---|
-| `long` | all | Required. Starts with a letter, then letters, digits, `_` (no hyphens). Typed with dashes: `long=dry_run` is `--dry-run` (see [Long option names](#long-option-names)) |
+| `long` | all | Required. Starts with a letter, then letters, digits, `_` (no hyphens). Names starting with `go_shopts` are reserved. Typed with dashes: `long=dry_run` is `--dry-run` (see [Long option names](#long-option-names)) |
 | `short` | all | Optional single letter or digit. `H` and `V` are reserved |
 | `type` | all | Required. `string`, `int`, `float`, `bool`, `enum`, `flag`, `list` |
 | `required` | all except `flag` | `true` or `false`; cannot be combined with `default` |
 | `default` | all except `flag` | Used when the option is not given. Validated when the schema is parsed. For a `list`, items are comma-separated |
-| `help` | all | One-line help text |
+| `help` | all | Help text; a single line |
 | `description` | all | Extra help text, shown under the option |
 | `enum` | `enum` | Allowed values, comma-separated |
 | `pattern` | `string`, `list` | Regex or `{{ Name }}` validator; must match the whole value (each item, for a list) |
-| `failure` | with `pattern` | Message shown when the pattern fails |
+| `failure` | with `pattern` | Message shown when the pattern fails; a single line |
 | `minLength`, `maxLength` | `string` | Length limits, counted in characters (Unicode code points), not bytes |
 | `min`, `max` | `int`, `float` | Inclusive numeric bounds, e.g. `min=1, max=65535` |
 | `minItems`, `maxItems` | `list` | Item count limits. `maxItems` defaults to 100; `minItems` defaults to 1 when `required=true` |
-| `positional` | `string`, `list` | `1`, `2`, … or `rest`; see [Positional arguments](#positional-arguments) |
 | `define` | own entry | Declares a named pattern; see [Pattern validators](#pattern-validators) |
 
 ### Flags
@@ -122,7 +119,7 @@ long=no_cache, type=flag, help=Skip the cache;
 |---|---|---|---|
 | `string` | Yes | No | As given |
 | `int` | Yes | No | Plain decimal: `007` → `7`, `+5` → `5`, so bash never reads it as octal |
-| `float` | Yes | No | As given; must be a finite number |
+| `float` | Yes | No | As given. Plain decimal only (`2.5`, `-1`, `.5`, `1e3`); `1_000`, hex, `Inf` and `NaN` are rejected |
 | `bool` | Yes | No | `true` or `false`. Accepts Go's set: `1`, `t`, `T`, `TRUE`, `true`, `True`, and the `0`/`f`/`false` forms. `yes`/`no` are rejected |
 | `enum` | Yes | No | As given; must be one of the `enum` values |
 | `flag` | No | No | `true` when given, `false` when not |
@@ -140,28 +137,14 @@ Options are written as `--name value`, `--name=value`, `-x value` or `-x=value`.
 - `-H`/`--help` and `-V`/`--version` are recognised anywhere in the arguments (before `--`). Lowercase `-h` and `-v` are free for your schema.
 - Short options cannot be bundled (`-abc`).
 - Flags take no value and answer only to their own name; see [Flags](#flags).
+- Every argument must be an option or an option's value. A bare word (`deploy.sh prod`) is an error, and so is anything after `--`. This catches a forgotten dash or unquoted spaces (`--message hello world`) instead of silently ignoring part of what was typed.
 - Unknown options and bad values are all reported together, not one at a time.
 
 ### Long option names
 
 Schema names use `_`; on the command line underscores become dashes. `long=dry_run` is typed `--dry-run` and `long=no_cache` is typed `--no-cache`. Output names are unaffected: the variables are still `SHOPTS_DRY_RUN` and `SHOPTS_NO_CACHE`.
 
-This is one global setting, never a mix: with dashes on (the default), `--dry_run` is an unknown option and the error suggests `--dry-run`. Set `GO_SHOPTS_DASH=0` to type names exactly as written in the schema (`--dry_run`, `--no_cache`) instead. Help and error messages always show the spelling users must type.
-
-### Positional arguments
-
-An entry with `positional=` binds bare arguments instead of a flag:
-
-```bash
-long=target, type=string, positional=1, required=true, help=Deploy target;
-long=files, type=list, positional=rest, help=Files to process;
-```
-
-- `positional=N` binds the Nth bare argument; numbering starts at 1 with no gaps.
-- `positional=rest` collects all remaining bare arguments into a list. At most one entry may use it, and it must be `type=list`.
-- Everything after `--` is treated as a bare argument.
-- Bare arguments with no matching positional entry are an error.
-- Positional entries use the same `required`, `default`, `pattern` and length rules as options. They cannot have a `short` flag, and a required positional cannot follow an optional one.
+This is one global setting, never a mix: with dashes on (the default), `--dry_run` is an unknown option. Set `GO_SHOPTS_DASH=0` to type names exactly as written in the schema (`--dry_run`, `--no_cache`) instead. Help and error messages always show the spelling users must type.
 
 ## Configuration
 
@@ -240,7 +223,7 @@ Checks run in this order, and the first to fail decides the code:
 5. The other settings (1).
 6. The arguments (3).
 
-When both `-H` and `-V` are given, the first one wins. An internal error exits 1, never 2.
+When both `-H` and `-V` are given, the first one wins. An internal error exits 1, never 2. If the reader stops reading before the output ends (for example a read loop that `break`s), shopts can be stopped by SIGPIPE and exit 141, like any Unix program.
 
 Exit 7 lets your script tell "help was shown" apart from "parsed successfully". Map it back to 0 for your own user:
 
@@ -251,14 +234,10 @@ Exit 7 lets your script tell "help was shown" apart from "parsed successfully". 
 
 ## Help and version
 
-`-H`/`--help` prints usage generated from the schema to stderr and exits 7. It stays on stderr because stdout is the data channel. Help describes your script only: its name (from `GO_SHOPTS_NAME`), its arguments and its options.
+`-H`/`--help` prints usage generated from the schema to stderr and exits 7. It stays on stderr because stdout is the data channel. Help describes your script only: its name (from `GO_SHOPTS_NAME`) and its options.
 
 ```
-Usage: deploy.sh [OPTIONS] <target> [files...]
-
-Arguments:
-  <target>            Deploy target; string; required
-  [files...]          Files to process; list
+Usage: deploy.sh [OPTIONS]
 
 Options:
   -e, --env <value>   Target; enum; required; allowed: dev, prod
@@ -322,7 +301,7 @@ When a pattern fails, the message is the option's `failure=` if set, then the va
   - `fields.go` — field table: how each field is read and which types it applies to
   - `validate.go` — the one `validate` function every value goes through
   - `patterns.go` — validator registry; built-ins are entries
-  - `args.go` — scans argv into raw values (options, positionals)
+  - `args.go` — scans argv into raw values
   - `help.go` — help text generated from the schema
   - `run.go` — the pipeline: scan, resolve defaults, validate, emit
 - `scripts/` — Bash acceptance tests; `scripts/test-contract.sh` covers the contract item by item.

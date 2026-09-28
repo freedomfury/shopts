@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -29,18 +28,17 @@ var fieldTable = map[string]fieldSpec{
 	"type":        {nil, setType},
 	"required":    {nil, setRequired},
 	"default":     {nil, setDefault},
-	"help":        {nil, func(e *entry, v string) error { e.help = v; return nil }},
+	"help":        {nil, setHelp},
 	"description": {nil, func(e *entry, v string) error { e.description = v; return nil }},
 	"enum":        {[]string{"enum"}, setEnum},
 	"pattern":     {[]string{"string", "list"}, func(e *entry, v string) error { e.pattern = v; return nil }},
-	"failure":     {[]string{"string", "list"}, func(e *entry, v string) error { e.failure = v; return nil }},
+	"failure":     {[]string{"string", "list"}, setFailure},
 	"minLength":   {[]string{"string"}, count(func(e *entry) **int { return &e.minLength }, 0)},
 	"maxLength":   {[]string{"string"}, count(func(e *entry) **int { return &e.maxLength }, 1)},
 	"min":         {[]string{"int", "float"}, limit(func(e *entry) **bound { return &e.min })},
 	"max":         {[]string{"int", "float"}, limit(func(e *entry) **bound { return &e.max })},
 	"minItems":    {[]string{"list"}, count(func(e *entry) **int { return &e.minItems }, 0)},
 	"maxItems":    {[]string{"list"}, count(func(e *entry) **int { return &e.maxItems }, 0)},
-	"positional":  {[]string{"string", "list"}, setPositional},
 }
 
 func setLong(e *entry, v string) error {
@@ -49,6 +47,11 @@ func setLong(e *entry, v string) error {
 	}
 	if v == "help" || v == "version" {
 		return fmt.Errorf("%q is reserved for -H/--help and -V/--version", v)
+	}
+	// GO_SHOPTS_ is shopts's own namespace; with an empty prefix, such a
+	// name would emit a variable in it.
+	if strings.HasPrefix(strings.ToLower(v), "go_shopts") {
+		return fmt.Errorf("%q is reserved: names starting with go_shopts belong to shopts", v)
 	}
 	e.long = v
 	return nil
@@ -111,24 +114,31 @@ func setEnum(e *entry, v string) error {
 	return nil
 }
 
-func setPositional(e *entry, v string) error {
-	if v == "rest" {
-		e.positional = restPositional
-		return nil
+func setHelp(e *entry, v string) error {
+	e.help = v
+	return oneLine(v)
+}
+
+func setFailure(e *entry, v string) error {
+	e.failure = v
+	return oneLine(v)
+}
+
+// oneLine rejects a newline in help= and failure=, which are shown on one
+// line; description= is the field for more lines.
+func oneLine(v string) error {
+	if strings.ContainsRune(v, '\n') {
+		return errors.New("must be a single line (use description for more lines)")
 	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 || strconv.Itoa(n) != v {
-		return fmt.Errorf("must be 1, 2, ... or rest, got %q", v)
-	}
-	e.positional = n
 	return nil
 }
 
-// count reads a whole-number field of at least lo.
+// count reads a whole-number field of at least lo, written as plain digits
+// (no sign, no leading zeros).
 func count(field func(*entry) **int, lo int) func(*entry, string) error {
 	return func(e *entry, v string) error {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < lo {
+		if err != nil || n < lo || strconv.Itoa(n) != v {
 			return fmt.Errorf("must be a whole number of at least %d, got %q", lo, v)
 		}
 		*field(e) = &n
@@ -175,39 +185,4 @@ func isName(s string) bool {
 		}
 	}
 	return true
-}
-
-// suggestField returns a "did you mean" hint for a misspelled field name.
-func suggestField(key string) string {
-	names := []string{"define"}
-	for name := range fieldTable {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		if d := editDistance(strings.ToLower(key), strings.ToLower(name)); d <= 2 && d < len(key)/2 {
-			return fmt.Sprintf(" (did you mean %q?)", name)
-		}
-	}
-	return ""
-}
-
-func editDistance(a, b string) int {
-	prev := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		cur := make([]int, len(b)+1)
-		cur[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
-		}
-		prev = cur
-	}
-	return prev[len(b)]
 }

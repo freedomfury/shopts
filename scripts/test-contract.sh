@@ -148,7 +148,7 @@ for form in "--a v" "--a=v" "-x v" "-x=v"; do
 done
 ok "underscores become dashes by default" "SHOPTS_DRY_RUN${TAB}true
 SHOPTS_MAX_DEPTH${TAB}3" 'long=dry_run, type=flag; long=max_depth, type=int;' --dry-run --max-depth=3
-err "only one spelling is accepted" 3 "unknown option --dry_run (did you mean --dry-run?)" 'long=dry_run, type=flag;' --dry_run
+err "only one spelling is accepted" 3 "unknown option --dry_run" 'long=dry_run, type=flag;' --dry_run
 ok "value that looks like an option is a value" "SHOPTS_A${TAB}--b
 SHOPTS_B${TAB}false" 'long=a, type=string; long=b, type=flag;' --a --b
 err "flags take no value" 3 "--b does not take a value" 'long=b, type=flag;' --b=true
@@ -162,26 +162,10 @@ ok "-h and -v are free for the schema" "SHOPTS_HOST${TAB}db
 SHOPTS_VERBOSE${TAB}true" 'long=host, short=h, type=string; long=verbose, short=v, type=flag;' -h db -v
 err "short bundles are not supported" 3 "short options cannot be combined: -ab" 'long=a, short=a, type=flag; long=b, short=b, type=flag;' -ab
 
-P='
-long=target, type=string, positional=1, required=true;
-long=region, type=string, positional=2, default=eu;
-long=files, type=list, positional=rest;
-'
-ok "positional=N binds the Nth bare argument" "SHOPTS_TARGET${TAB}web
-SHOPTS_REGION${TAB}us" "${P}" web us
-ok "positional default" "SHOPTS_TARGET${TAB}web
-SHOPTS_REGION${TAB}eu" "${P}" web
-ok "positional=rest collects the remainder" "SHOPTS_TARGET${TAB}web
-SHOPTS_REGION${TAB}us
-SHOPTS_FILES${TAB}a,b" "${P}" web us a b
-ok "everything after -- is bare" "SHOPTS_TARGET${TAB}-x
-SHOPTS_REGION${TAB}--help" "${P}" -- -x --help
-err "missing required positional" 3 "missing required argument <target>" "${P}"
-err "bare argument with no positional entry" 3 'unexpected argument "stray"' "${S}" stray
-err "positional pattern" 3 "invalid value for <t>" 'long=t, type=string, positional=1, pattern=[a-z]+;' UP
-err "positional numbering has no gaps" 2 "positional=2 is missing" 'long=a, type=string, positional=1; long=b, type=string, positional=3;'
-err "only one positional=rest" 2 "only one entry can be positional=rest" 'long=a, type=list, positional=rest; long=b, type=list, positional=rest;'
-err "positional=rest must be a list" 2 "positional=rest needs type=list" 'long=a, type=string, positional=rest;'
+err "bare words are rejected" 3 'unrecognized bare word "web"' "${S}" --a x web
+err "a lone - is a bare word" 3 'unrecognized bare word "-"' "${S}" -
+err "everything after -- is rejected" 3 'unrecognized bare word "-x" after --' "${S}" --a x -- -x
+err "positional= no longer exists" 2 'unknown field "positional"' 'long=a, type=string, positional=1;'
 
 echo "--- Output contract ---"
 ok "schema order, emission rules" "SHOPTS_C${TAB}3
@@ -213,10 +197,8 @@ err "help needs a valid schema" 2 "schema line" 'long=a, type=nope;' --help
 
 echo "--- Help ---"
 run 'short=e, long=env, type=enum, enum="dev,prod", required=true, help=Target;
-short=v, long=verbose, type=flag, help=Verbose output;
-long=target, type=string, positional=1, required=true, help=Deploy target;
-long=files, type=list, positional=rest, help=Files to process;' --help
-if [[ ${RC} -eq 7 && -z "${OUT}" && "${ERR}" == "Usage: [OPTIONS] <target> [files...]"* &&
+short=v, long=verbose, type=flag, help=Verbose output;' --help
+if [[ ${RC} -eq 7 && -z "${OUT}" && "${ERR}" == "Usage: [OPTIONS]"$'\n'* &&
   "${ERR}" == *"  -e, --env <value>   Target; enum; required; allowed: dev, prod"* &&
   "${ERR}" == *"  -v, --verbose       Verbose output; flag"* &&
   "${ERR}" == *"  -H, --help          Show this help"* &&
@@ -264,6 +246,23 @@ long=email,   type=string, pattern={{ EmailAddress }};
 long=release, type=string, pattern={{ SemVer }}, default=1.0.0;
 long=host,    type=string, pattern={{ IPv4Address }}, required=true;
 ' --host 10.0.0.1
+
+echo "--- Code review leftovers ---"
+err "unknown field has no suggestion" 2 'unknown field "patern"' 'long=a, type=string, patern=x;'
+run 'long=a, type=string, patern=x;'
+if [[ "${ERR}" != *"did you mean"* ]]; then pass; else fail "unknown field has no suggestion (no did-you-mean)"; fi
+err "float rejects Go-only syntax" 3 "must be a valid number" 'long=r, type=float;' --r 1_000
+ok "float accepts an exponent" "SHOPTS_R${TAB}1e3" 'long=r, type=float;' --r 1e3
+err "help must be one line" 2 "help: must be a single line" $'long=a, type=flag, help="one\ntwo";'
+err "missing value reported once" 3 "--a requires a value" 'long=a, type=string, required=true;' --a
+run 'long=a, type=string, required=true;' --a
+if [[ "${ERR}" != *"missing required"* ]]; then pass; else fail "missing value reported once (no second error)"; fi
+err "schema must be UTF-8" 2 "schema line 1, col 30: schema is not valid UTF-8" "$(printf 'long=a, type=string, help=Caf\xe9;')"
+err "go_shopts names are reserved" 2 "names starting with go_shopts belong to shopts" 'long=go_shopts_args, type=string;'
+err "SemVer rejects a leading-zero pre-release" 3 "must be a semantic version" 'long=v, type=string, pattern={{ SemVer }};' --v 1.0.0-01
+ok "SemVer accepts a proper pre-release" "SHOPTS_V${TAB}1.0.0-rc.1+build.5" 'long=v, type=string, pattern={{ SemVer }};' --v 1.0.0-rc.1+build.5
+err "option names are ASCII" 3 "unknown option -é" "${S}" -é
+err "count fields take plain digits" 2 'got "01"' 'long=t, type=list, maxItems=01;'
 
 echo "--- Caller idiom (README read loop, bash 4.4+) ---"
 caller() {

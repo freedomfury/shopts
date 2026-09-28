@@ -3,6 +3,33 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed
+- **Breaking:** `positional=` is gone. Every argument must be an option or an option's value: a bare word, and anything after `--`, is an error (`unrecognized bare word "web"`). This catches a forgotten dash or unquoted spaces instead of silently accepting them. Leftover-argument support may come back later.
+- The "did you mean" suggestions for misspelled schema fields and for the other long-name spelling (`--dry_run` vs `--dry-run`). The errors name the unknown field or option and its position.
+
+### Changed
+- **Breaking:** `float` values must be plain decimal (`2.5`, `-1`, `.5`, `1e3`). Go-only forms (`1_000`, `0x1p-2`, `Inf`, `NaN`) are rejected.
+- **Breaking:** `help=` and `failure=` must be a single line; `description=` is the field for more lines.
+- **Breaking:** long names starting with `go_shopts` (any case) are reserved; with an empty prefix they would emit a variable in shopts's own namespace.
+- **Breaking:** count fields (`minLength`, `maxLength`, `minItems`, `maxItems`) must be plain digits: no sign, no leading zeros.
+- `{{ SemVer }}` uses the regular expression from semver.org, so pre-release numbers with leading zeros (`1.0.0-01`) are rejected.
+- Option names on the command line are ASCII; anything else is an unknown option.
+- A required option given without its value reports only "requires a value", not also "missing required option".
+
+### Fixed
+- Schema error positions: a non-UTF-8 byte is reported at its own column, a byte order mark is rejected at line 1, col 1, and errors at the end of an indented schema point at the right column.
+
+### Notes on 0.0.14
+Changes in 0.0.14 that its entry did not mention:
+- The Go package API changed: `Run(argv, stdout, stderr, version)` returns the exit code; `ExitError` and `DefaultPrefix` were removed.
+- The schema grammar became stricter: a trailing comma or an empty entry is a schema error, `short=` with an empty value is an error, and `default=` with an empty value is an explicit empty default.
+- `GO_SHOPTS_UPCASE` set to an empty string now means the default (uppercase); before 0.0.14 it meant lowercase.
+- If the reader stops reading early, shopts can exit 141 (SIGPIPE), like any Unix program.
+
+---
+
 ## [0.0.15] - 2026-09-28
 
 Test-only release: no change to the binary's behavior.

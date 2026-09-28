@@ -9,8 +9,6 @@ const argsSchema = `
 	short=u, long=user, type=string;
 	short=v, long=verbose, type=flag;
 	short=t, long=tag, type=list;
-	long=target, type=string, positional=1;
-	long=files, type=list, positional=rest;
 `
 
 func scanArgs(t *testing.T, schemaText string, args ...string) (scanned, map[string][]string) {
@@ -43,18 +41,19 @@ func TestScanValueThatLooksLikeOption(t *testing.T) {
 }
 
 func TestScanEmptyInlineValue(t *testing.T) {
-	_, v := scanArgs(t, argsSchema, "--user=", "x")
-	if v["user"][0] != "" || v["target"][0] != "x" {
+	_, v := scanArgs(t, argsSchema, "--user=", "-v")
+	if v["user"][0] != "" || v["verbose"][0] != "true" {
 		t.Fatalf("got %v", v)
 	}
 }
 
-func TestScanPositionals(t *testing.T) {
-	sc, v := scanArgs(t, argsSchema, "deploy", "-v", "a", "-", "--", "-b", "--user=x")
-	if len(sc.errs) > 0 {
-		t.Fatal(sc.errs)
+func TestScanRejectsBareWords(t *testing.T) {
+	sc, v := scanArgs(t, argsSchema, "deploy", "-v", "-", "--", "-b", "--user=x")
+	want := []string{`unrecognized bare word "deploy"`, `unrecognized bare word "-"`, `unrecognized bare word "-b" after --`, `unrecognized bare word "--user=x" after --`}
+	if strings.Join(sc.errs, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %q, want %q", sc.errs, want)
 	}
-	if v["target"][0] != "deploy" || strings.Join(v["files"], " ") != "a - -b --user=x" || v["user"] != nil {
+	if v["verbose"][0] != "true" || v["user"] != nil {
 		t.Fatalf("got %v", v)
 	}
 }
@@ -97,9 +96,11 @@ func TestScanErrors(t *testing.T) {
 		{argsSchema, []string{"--user"}, "--user requires a value"},
 		{argsSchema, []string{"-u", "a", "--user", "b"}, "--user is given more than once"},
 		{argsSchema, []string{"-v", "-v"}, "--verbose is given more than once"},
-		{argsSchema, []string{"--target", "x"}, "unknown option --target"},
-		{"long=a, type=string;", []string{"stray"}, `unexpected argument "stray"`},
-		{"long=a, type=string;", []string{"--", "stray"}, `unexpected argument "stray"`},
+		{argsSchema, []string{"--nope"}, "unknown option --nope"},
+		{argsSchema, []string{"-é"}, "unknown option -é"},
+		{argsSchema, []string{"--usér=x"}, "unknown option --usér"},
+		{"long=a, type=string;", []string{"stray"}, `unrecognized bare word "stray"`},
+		{"long=a, type=string;", []string{"--", "stray"}, `unrecognized bare word "stray" after --`},
 	}
 	for _, tc := range cases {
 		sc, _ := scanArgs(t, tc.schema, tc.args...)
@@ -116,7 +117,7 @@ func TestScanDashes(t *testing.T) {
 		t.Fatalf("got %v, errs %v", v, sc.errs)
 	}
 	for _, tc := range []struct{ arg, want string }{
-		{"--dry_run", "unknown option --dry_run (did you mean --dry-run?)"},
+		{"--dry_run", "unknown option --dry_run"},
 		{"--no-dry-run", "unknown option --no-dry-run"}, // nothing is implied
 		{"--cache", "unknown option --cache"},
 		{"--no-cache=1", "--no-cache does not take a value"},

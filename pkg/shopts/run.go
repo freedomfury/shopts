@@ -101,8 +101,10 @@ func Run(argv []string, stdout, stderr io.Writer, version string) (code int) {
 		// 2. Resolve defaults and absent flags.
 		items, ok := resolve(e, sc.values[e])
 		if !ok {
-			if e.required {
-				errs = append(errs, "missing required "+kind(e)+" "+displayName(e))
+			// An option already reported as broken ("requires a value")
+			// is not reported again as missing.
+			if e.required && !sc.failed[e] {
+				errs = append(errs, "missing required option "+displayName(e))
 			}
 			continue
 		}
@@ -149,7 +151,7 @@ func Run(argv []string, stdout, stderr io.Writer, version string) (code int) {
 		for _, e := range errs {
 			b.WriteString(prefix + e + "\n")
 		}
-		fmt.Fprintf(&b, "Usage: %s\n", usageLine(s, cfg.name))
+		fmt.Fprintf(&b, "Usage: %s\n", usageLine(cfg.name))
 		if cfg.name != "" {
 			fmt.Fprintf(&b, "Try '%s --help' for more information.\n", cfg.name)
 		} else {
@@ -179,13 +181,6 @@ func resolve(e *entry, given []string) (items []string, ok bool) {
 		return []string{"false"}, true
 	}
 	return nil, false
-}
-
-func kind(e *entry) string {
-	if e.positional != 0 {
-		return "argument"
-	}
-	return "option"
 }
 
 // config holds the GO_SHOPTS_ settings.

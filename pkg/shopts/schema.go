@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"text/scanner"
+	"unicode/utf8"
 )
 
 // pos is a location in the schema text, as the author wrote it.
@@ -47,7 +48,7 @@ func (r rawEntry) has(key string) bool {
 	return false
 }
 
-// entry is one option or positional argument.
+// entry is one option.
 type entry struct {
 	pos         pos
 	fieldPos    map[string]pos // where each field's value starts, for errors
@@ -68,10 +69,7 @@ type entry struct {
 	min, max    *bound
 	minItems    *int
 	maxItems    *int
-	positional  int // 0 for options, N for positional=N, restPositional for positional=rest
 }
-
-const restPositional = -1
 
 // at returns the position of field key's value, or the entry's position.
 func (e *entry) at(key string) pos {
@@ -83,9 +81,7 @@ func (e *entry) at(key string) pos {
 
 // schema is a parsed schema.
 type schema struct {
-	entries     []*entry // options and positionals, in schema order
-	positionals []*entry // positional=N entries, indexed by N-1
-	rest        *entry   // the positional=rest entry, if any
+	entries []*entry // options, in schema order
 }
 
 // ---------------------------------------------------------------------------
@@ -99,14 +95,15 @@ type schema struct {
 //	field  := key "=" value
 //	value  := quoted | bare     (bare runs to the next unquoted "," or ";")
 type lexer struct {
-	sc     scanner.Scanner
-	indent int // columns removed by dedent; added back to reported columns
-	err    error
+	sc      scanner.Scanner
+	removed []int // columns dedent removed from each line; added back to reported columns
+	err     error
 }
 
 func newLexer(text string) *lexer {
-	text, indent := dedent(strings.ReplaceAll(text, "\r", ""))
-	l := &lexer{indent: indent}
+	text = strings.ReplaceAll(text, "\r", "")
+	l := &lexer{err: checkUTF8(text)}
+	text, l.removed = dedent(text)
 	l.sc.Init(strings.NewReader(text))
 	l.sc.Error = func(_ *scanner.Scanner, msg string) {
 		if l.err == nil {
@@ -116,11 +113,35 @@ func newLexer(text string) *lexer {
 	return l
 }
 
-// pos returns the position of the next character.
+// pos returns the position of the next character, as the author wrote it.
 func (l *lexer) pos() pos {
 	l.sc.Peek()
 	p := l.sc.Pos()
-	return pos{line: p.Line, col: p.Column + l.indent}
+	col := p.Column
+	if p.Line >= 1 && p.Line <= len(l.removed) {
+		col += l.removed[p.Line-1]
+	}
+	return pos{line: p.Line, col: col}
+}
+
+// checkUTF8 reports the first byte that is not UTF-8, or a byte order mark.
+// Schemas are plain UTF-8 text.
+func checkUTF8(text string) error {
+	if strings.HasPrefix(text, "\uFEFF") {
+		return errAt(pos{1, 1}, "schema starts with a byte order mark (BOM); save it as UTF-8 without one")
+	}
+	for i, line := range strings.Split(text, "\n") {
+		col := 1
+		for len(line) > 0 {
+			r, size := utf8.DecodeRuneInString(line)
+			if r == utf8.RuneError && size == 1 {
+				return errAt(pos{i + 1, col}, "schema is not valid UTF-8")
+			}
+			line = line[size:]
+			col++
+		}
+	}
+	return nil
 }
 
 func (l *lexer) skip(chars string) {
@@ -130,6 +151,9 @@ func (l *lexer) skip(chars string) {
 }
 
 func (l *lexer) entries() ([]rawEntry, error) {
+	if l.err != nil {
+		return nil, l.err
+	}
 	var out []rawEntry
 	for {
 		l.skip(" \t\n")
@@ -278,10 +302,11 @@ func describe(r rune) string {
 	return fmt.Sprintf("%q", r)
 }
 
-// dedent removes common leading indentation from all non-blank lines and
-// returns how many columns it removed.
-func dedent(s string) (string, int) {
+// dedent removes common leading indentation from all non-blank lines, and
+// empties blank ones. It returns how many columns it removed from each line.
+func dedent(s string) (string, []int) {
 	lines := strings.Split(s, "\n")
+	removed := make([]int, len(lines))
 	indent := -1
 	for _, l := range lines {
 		if strings.TrimSpace(l) == "" {
@@ -293,16 +318,18 @@ func dedent(s string) (string, int) {
 		}
 	}
 	if indent <= 0 {
-		return s, 0
+		return s, removed
 	}
 	for i, l := range lines {
 		if strings.TrimSpace(l) == "" {
+			removed[i] = len(l)
 			lines[i] = ""
 		} else {
+			removed[i] = indent
 			lines[i] = l[indent:]
 		}
 	}
-	return strings.Join(lines, "\n"), indent
+	return strings.Join(lines, "\n"), removed
 }
 
 // ---------------------------------------------------------------------------
@@ -379,9 +406,12 @@ func buildDefine(r rawEntry) (*validator, error) {
 		case "pattern":
 			pattern, patternPos = f.value, f.valPos
 		case "failure":
+			if err := oneLine(f.value); err != nil {
+				return nil, errAt(f.valPos, "failure: %v", err)
+			}
 			failure = f.value
 		default:
-			return nil, errAt(f.keyPos, "field %q is not allowed in a define entry (only define, pattern, failure)%s", f.key, suggestField(f.key))
+			return nil, errAt(f.keyPos, "field %q is not allowed in a define entry (only define, pattern, failure)", f.key)
 		}
 	}
 	if !validatorNameRE.MatchString(name) {
@@ -412,7 +442,7 @@ func buildEntry(r rawEntry, defines map[string]*validator) (*entry, error) {
 	fields := make([]rawField, 0, len(r.fields))
 	for _, f := range r.fields {
 		if _, ok := fieldTable[f.key]; !ok {
-			return nil, errAt(f.keyPos, "unknown field %q%s", f.key, suggestField(f.key))
+			return nil, errAt(f.keyPos, "unknown field %q", f.key)
 		}
 		if _, dup := e.fieldPos[f.key]; dup {
 			return nil, errAt(f.keyPos, "field %q is given twice", f.key)
@@ -492,17 +522,6 @@ func (e *entry) check() error {
 	if e.failure != "" && e.pattern == "" {
 		return fail("failure", "failure is set but there is no pattern")
 	}
-	if e.positional != 0 {
-		if e.short != "" {
-			return fail("short", "a positional argument cannot have a short flag")
-		}
-		if e.positional == restPositional && e.typ != "list" {
-			return fail("positional", "positional=rest needs type=list")
-		}
-		if e.positional > 0 && e.typ == "list" {
-			return fail("positional", "a list positional collects the remaining arguments; use positional=rest")
-		}
-	}
 	if e.def != nil {
 		if e.typ == "list" {
 			items, err := splitItems(*e.def)
@@ -531,7 +550,6 @@ func (s *schema) check() error {
 	}
 	longs := map[string]string{} // lowercased long name -> long name as written
 	shorts := map[string]bool{}
-	numbered := map[int]*entry{}
 	for _, e := range s.entries {
 		// Output names are uppercased by default, so names that differ only
 		// in case would emit the same variable.
@@ -547,37 +565,6 @@ func (s *schema) check() error {
 				return errAt(e.at("short"), "short flag %q is used twice", e.short)
 			}
 			shorts[e.short] = true
-		}
-		switch {
-		case e.positional == restPositional:
-			if s.rest != nil {
-				return errAt(e.at("positional"), "option %q: only one entry can be positional=rest (%q already is)", e.long, s.rest.long)
-			}
-			s.rest = e
-		case e.positional > 0:
-			if other, dup := numbered[e.positional]; dup {
-				return errAt(e.at("positional"), "option %q: positional=%d is already used by %q", e.long, e.positional, other.long)
-			}
-			numbered[e.positional] = e
-		}
-	}
-	for n := 1; n <= len(numbered); n++ {
-		e, ok := numbered[n]
-		if !ok {
-			return fmt.Errorf("positional arguments must be numbered 1 to %d with no gaps; positional=%d is missing", len(numbered), n)
-		}
-		s.positionals = append(s.positionals, e)
-	}
-	optional := ""
-	for _, e := range append(append([]*entry{}, s.positionals...), s.rest) {
-		if e == nil {
-			continue
-		}
-		if e.required && optional != "" {
-			return errAt(e.at("required"), "option %q: a required positional cannot follow the optional positional %q", e.long, optional)
-		}
-		if !e.required {
-			optional = e.long
 		}
 	}
 	return nil

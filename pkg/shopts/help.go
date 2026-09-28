@@ -6,82 +6,39 @@ import (
 )
 
 // helpText is the usage generated from the schema. It describes the
-// caller's script only: its name, arguments and options.
+// caller's script only: its name and options.
 func helpText(s *schema, name string) string {
-	type row struct {
-		label string
-		e     *entry
-	}
-	var args, opts []row
-	for _, e := range s.positionals {
-		args = append(args, row{argLabel(e), e})
-	}
-	if s.rest != nil {
-		args = append(args, row{argLabel(s.rest), s.rest})
-	}
+	type row struct{ label, summary, description string }
+	var rows []row
 	for _, e := range s.entries {
-		if e.positional == 0 {
-			opts = append(opts, row{optLabel(e), e})
-		}
+		rows = append(rows, row{optLabel(e), summary(e), e.description})
 	}
-	helpRow := row{"-H, --help", nil}
-	opts = append(opts, helpRow)
+	rows = append(rows, row{"-H, --help", "Show this help", ""})
 
 	width := 0
-	for _, r := range append(append([]row{}, args...), opts...) {
+	for _, r := range rows {
 		width = max(width, len(r.label))
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Usage: %s\n", usageLine(s, name))
-	section := func(title string, rows []row) {
-		if len(rows) == 0 {
-			return
-		}
-		fmt.Fprintf(&b, "\n%s:\n", title)
-		for _, r := range rows {
-			if r.e == nil {
-				fmt.Fprintf(&b, "  %-*s   %s\n", width, r.label, "Show this help")
-				continue
-			}
-			fmt.Fprintf(&b, "  %-*s   %s\n", width, r.label, summary(r.e))
-			for _, line := range strings.Split(r.e.description, "\n") {
-				if line = strings.TrimSpace(line); line != "" {
-					fmt.Fprintf(&b, "  %-*s   %s\n", width, "", line)
-				}
+	fmt.Fprintf(&b, "Usage: %s\n\nOptions:\n", usageLine(name))
+	for _, r := range rows {
+		fmt.Fprintf(&b, "  %-*s   %s\n", width, r.label, r.summary)
+		for _, line := range strings.Split(r.description, "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				fmt.Fprintf(&b, "  %-*s   %s\n", width, "", line)
 			}
 		}
 	}
-	section("Arguments", args)
-	section("Options", opts)
 	return b.String()
 }
 
-// usageLine is the one-line synopsis, e.g. "deploy.sh [OPTIONS] <target> [files...]".
-func usageLine(s *schema, name string) string {
-	var parts []string
-	if name != "" {
-		parts = append(parts, name)
+// usageLine is the one-line synopsis, e.g. "deploy.sh [OPTIONS]".
+func usageLine(name string) string {
+	if name == "" {
+		return "[OPTIONS]"
 	}
-	parts = append(parts, "[OPTIONS]")
-	for _, e := range s.positionals {
-		parts = append(parts, argLabel(e))
-	}
-	if s.rest != nil {
-		parts = append(parts, argLabel(s.rest))
-	}
-	return strings.Join(parts, " ")
-}
-
-func argLabel(e *entry) string {
-	name := e.name
-	if e.positional == restPositional {
-		name += "..."
-	}
-	if e.required {
-		return "<" + name + ">"
-	}
-	return "[" + name + "]"
+	return name + " [OPTIONS]"
 }
 
 func optLabel(e *entry) string {

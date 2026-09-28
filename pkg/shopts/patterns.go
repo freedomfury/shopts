@@ -161,10 +161,13 @@ var builtins = []*validator{
 	{
 		Name:    "SemVer",
 		Summary: "`MAJOR.MINOR.PATCH[-pre][+build]`",
-		Check:   isSemVer,
+		// The regular expression suggested by semver.org 2.0.0.
+		Check: matches(`(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)` +
+			`(?:-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?` +
+			`(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?`),
 		Failure: "must be a semantic version like 1.2.3",
-		Valid:   []string{"1.0.0", "2.1.3-rc.1+build.5"},
-		Invalid: []string{"1.0", "01.0.0", "1.0.0-", "v1.0.0"},
+		Valid:   []string{"1.0.0", "2.1.3-rc.1+build.5", "1.0.0-0.3.7", "1.0.0-x.7.z.92", "1.0.0+001"},
+		Invalid: []string{"1.0", "01.0.0", "1.0.0-", "v1.0.0", "1.0.0-01", "1.0.0-alpha..1", "1.0.0+"},
 	},
 	{
 		Name:    "PortNumber",
@@ -259,34 +262,6 @@ func isGitRef(v string) bool {
 	}
 	for _, part := range strings.Split(v, "/") {
 		if strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
-			return false
-		}
-	}
-	return true
-}
-
-var semVerIdents = regexp.MustCompile(`^[0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*$`)
-
-// isSemVer checks MAJOR.MINOR.PATCH[-pre][+build] per semver.org 2.0.0.
-func isSemVer(v string) bool {
-	if i := strings.IndexByte(v, '+'); i >= 0 {
-		if !semVerIdents.MatchString(v[i+1:]) {
-			return false
-		}
-		v = v[:i]
-	}
-	if i := strings.IndexByte(v, '-'); i >= 0 {
-		if !semVerIdents.MatchString(v[i+1:]) {
-			return false
-		}
-		v = v[:i]
-	}
-	parts := strings.Split(v, ".")
-	if len(parts) != 3 {
-		return false
-	}
-	for _, p := range parts {
-		if p == "" || (len(p) > 1 && p[0] == '0') || strings.Trim(p, "0123456789") != "" {
 			return false
 		}
 	}
