@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
+## Basic success path: parse with the README read loop and check every value.
 ## NOTE: Run this script from the project root (../scripts/test.sh)
 set -euo pipefail
+
+# Settings from the caller's environment must not change the output.
+unset "${!GO_SHOPTS_@}"
 
 SCHEMA='
 short=u, long=username, required=true, type=string, help=Username for login, minLength=3;
@@ -17,11 +21,24 @@ fi
 
 while IFS=$'\t' read -r k v; do
   printf -v "${k}" '%s' "${v}"
-  declare -xr "${k#SHOPTS_}"="${v}"
 done < <("${binary}" "${SCHEMA}" -u alice -p s3cret -v)
+rc=0
+wait $! || rc=$?
+if [[ ${rc} -ne 0 ]]; then
+  echo "FAIL: shopts exited ${rc}" >&2
+  exit 1
+fi
 
-printf 'USERNAME=%s\n' "${USERNAME}"
-printf 'PASS=%s\n' "${PASS}"
-printf 'VERBOSE=%s\n' "${VERBOSE}"
-printf 'MODE=%s\n' "${MODE}"
-printf 'CONFIG=%s\n' "${CONFIG}"
+check() {
+  if [[ "${!1-}" != "$2" ]]; then
+    printf 'FAIL: %s=%q, want %q\n' "$1" "${!1-}" "$2" >&2
+    exit 1
+  fi
+  printf 'PASS: %s=%s\n' "$1" "$2"
+}
+
+check SHOPTS_USERNAME alice
+check SHOPTS_PASS s3cret
+check SHOPTS_VERBOSE true
+check SHOPTS_MODE dev
+check SHOPTS_CONFIG /etc/app/config.yaml

@@ -2,6 +2,9 @@
 ## NOTE: Run this script from the project root (../scripts/test-negative.sh)
 set -euo pipefail
 
+# Settings from the caller's environment must not change the output.
+unset "${!GO_SHOPTS_@}"
+
 SCHEMA='
 short=u, long=username, required=true, type=string, help=Username for login, description=The username to authenticate with the system., minLength=3;
 short=p, long=pass, required=true, type=string, help=Password for login, minLength=6;

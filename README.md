@@ -343,6 +343,8 @@ All testing is automated via the `Makefile`. Common targets:
 | `make test` | Run all tests (Go + bash). |
 | `make test-go` | Run Go unit tests only (`go test -race ./...`). |
 | `make test-bash` | Run bash integration tests only. |
+| `make test-e2e` | Run the e2e scenarios in `scripts/test-e2e/`. |
+| `make test-all` | Run everything: Go tests, bash tests and e2e scenarios. |
 | `make readme` | Regenerate the README validator table from the registry. |
 | `make benchmark` | Run Go parser benchmark (default 100 iterations). |
 | `make benchmark N=1000` | Run benchmark with custom iteration count. |
@@ -363,8 +365,9 @@ Run these from the project root.
 - `./scripts/test-negative.sh` verifies help output and a representative validation failure path.
 - `./scripts/test-extensive.sh` exercises the wider type matrix, defaults, repeated list values, flags, and delimiter handling.
 - `./scripts/test-contract.sh` is the acceptance suite for the contract: each item of the spec has at least one check.
+- `./scripts/run-e2e-tests.sh` runs the scenarios in `scripts/test-e2e/` in parallel; each checks the exact output or error.
 
-All test scripts will build the Go binary if missing. Ensure `bin/shopts` is up to date.
+All test scripts will build the Go binary if missing. Ensure `bin/shopts` is up to date. See [scripts/TEST.md](scripts/TEST.md) for what each suite checks and how to add tests.
 
 ## Releases
 

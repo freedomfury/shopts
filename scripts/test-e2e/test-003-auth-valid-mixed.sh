@@ -2,11 +2,12 @@
 ## Test: Authentication with mixed options (valid)
 set -euo pipefail
 
-BINARY=${1:-bin/shopts}
+# shellcheck source=scripts/test-e2e/lib.sh
+source "$(dirname "$0")/lib.sh"
+
 SCHEMA='short=u, long=username, required=true, type=string, minLength=3, help=Username; short=p, long=pass, required=true, type=string, minLength=6, help=Password;'
 
-if "$BINARY" "$SCHEMA" -u bob --pass secretpass >/dev/null 2>&1; then
-    exit 0
-else
-    exit 1
-fi
+expect_ok "$SCHEMA" -u bob --pass secretpass <<'EOF'
+SHOPTS_USERNAME=bob
+SHOPTS_PASS=secretpass
+EOF

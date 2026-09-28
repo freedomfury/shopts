@@ -1,200 +1,117 @@
-# E2E Testing Documentation
+# Testing
 
-## Overview
+shopts has Go unit tests and five bash suites that run the built binary. The bash suites
+are the acceptance tests: they exercise the contract (stdout, stderr, exit code) the way a
+calling script sees it.
 
-The shopts project includes a comprehensive End-to-End (E2E) test suite consisting of 22 deterministic test cases that validate the CLI argument parser across multiple real-world scenarios and error conditions.
+## Suites
 
-## Test Architecture
+| Suite | What it checks |
+|---|---|
+| `go test ./...` | Unit tests for each file in `pkg/shopts`: lexer and parser, field rules, `validate`, the validator registry, argument scanning, help, and `Run` end to end. Each validator's `Valid`/`Invalid` examples run as tests, and the README's generated tables must match the code. |
+| `scripts/test.sh` | The basic success path through the README read loop: shopts exits 0 and every variable has the expected value. |
+| `scripts/test-negative.sh` | The exact help text (`--help`, exit 7) and the exact error output for a validation failure (exit 3). |
+| `scripts/test-extensive.sh` | Every type, defaults, lists, flags, patterns, length limits, the list delimiter and the prefix setting. Each value is checked, and each run starts with no `SHOPTS_` variables left over. |
+| `scripts/test-contract.sh` | The acceptance suite for the contract spec: one or more checks per spec item, plus a check for each code-review fix. Each check asserts the exit code, stdout byte for byte (including the final newline), and a stderr message. |
+| `scripts/test-e2e/` | 22 realistic scenarios (auth, server, export, database, API), run in parallel by `scripts/run-e2e-tests.sh`. |
 
-### Directory Structure
-- **scripts/test-e2e/** — 22 individual test files (test-001-*.sh through test-022-*.sh)
-- **scripts/run-e2e-tests.sh** — Parallel test runner with background job pool
-- **scripts/test.sh** — Go unit tests runner
-- **scripts/test-negative.sh** — Negative test cases
-- **scripts/test-extensive.sh** — Extensive test cases
+Every suite clears `GO_SHOPTS_*` settings from its environment first, so settings you have
+exported in your shell can't change the results.
 
-### Test Execution
+## Running
 
-Tests are executed in parallel using a background job pool with configurable parallelism (defaults to CPU count via `nproc`). Each test:
-1. Runs independently in the background
-2. Captures output to a per-test result file
-3. Logs results with status (PASS/FAIL)
-4. Results are sorted by test number in final output
+| Target | Runs |
+|---|---|
+| `make test` | Go tests and the bash suites |
+| `make test-go` | `go test -race ./...` |
+| `make test-bash` | `test.sh`, `test-negative.sh`, `test-extensive.sh`, `test-contract.sh` |
+| `make test-e2e` | The e2e scenarios |
+| `make test-all` | All of the above |
+| `make lint-bash` | shellcheck on every `.sh` file in the repo |
+| `make readme` | Regenerates the README tables that `go test` checks |
 
-Run all E2E tests with:
+Run the scripts from the project root. Each one builds `bin/shopts` if it is missing, but
+does not rebuild it if it is stale; `make` rebuilds it when the Go sources change.
+
+CI runs the Go tests, all bash suites, the e2e scenarios, golangci-lint and
+`make lint-bash`.
+
+## Contract suite (`scripts/test-contract.sh`)
+
+Checks are one line each, using three helpers:
+
+- `ok NAME STDOUT SCHEMA ARGS...`: exit 0, and stdout is exactly the given lines.
+- `err NAME RC MESSAGE SCHEMA ARGS...`: exit `RC`, empty stdout, and `MESSAGE` in stderr.
+- `envrun NAME RC WANT VAR=VALUE... -- SCHEMA ARGS...`: like `ok` (when `RC` is 0) or
+  `err`, with the given settings in the environment of that one run.
+
+Sections follow the spec: schema format; parser positions and quoting; fields; invocation
+and configuration; argument parsing; output; exit codes; help; pattern validators; code
+review fixes; and the README read loops (tab and `{{ null }}`).
+
+## E2E scenarios (`scripts/test-e2e/`)
+
+Each `test-NNN-*.sh` file holds one scenario: a schema, the arguments, and the exact
+expected result, checked with the helpers in `scripts/test-e2e/lib.sh`:
+
 ```bash
-make test-e2e
+expect_ok "$SCHEMA" -u alice -p password123 -v <<'EOF'
+SHOPTS_USERNAME=alice
+SHOPTS_PASS=password123
+SHOPTS_VERBOSE=true
+SHOPTS_REMEMBER=false
+EOF
+
+expect_fail 3 'invalid value for --format: must be one of: json, csv, yaml' "$SCHEMA" -f xml
 ```
 
-## Test Coverage
+- `expect_ok` requires exit 0, empty stderr, and exactly the listed lines on stdout. In
+  each expected line, the first `=` stands for the tab between key and value.
+- `expect_fail` requires the exact exit code, empty stdout, and the message in stderr. A
+  typo in the test's own schema therefore fails the test (exit 2, want 3) instead of
+  passing by accident.
 
-### Valid Scenarios (Tests 001-016)
+| Test | Scenario | Expects |
+|---|---|---|
+| test-001 | Authentication with short options | output |
+| test-002 | Authentication with long options | output |
+| test-003 | Authentication with mixed options | output |
+| test-004 | Authentication with a bool option | output |
+| test-005 | Server config with just host | output |
+| test-006 | Server config with host and port | output |
+| test-007 | Server config with protocol | output |
+| test-008 | Data export with just format | output |
+| test-009 | Data export with format and output | output |
+| test-010 | Data export with compress flag | output |
+| test-011 | Database with required fields only | output |
+| test-012 | Database with host override | output |
+| test-013 | Database with pool and timeout settings | output |
+| test-014 | API client with just endpoint | output |
+| test-015 | API client with endpoint and method | output |
+| test-016 | API client with a tags list | output |
+| test-017 | Username too short | exit 3 |
+| test-018 | Invalid IPv4 address | exit 3 |
+| test-019 | Format not in the enum (xml) | exit 3 |
+| test-020 | URL without a scheme | exit 3 |
+| test-021 | Format not in the enum (toml) | exit 3 |
+| test-022 | HTTP method not in the enum | exit 3 |
 
-#### Authentication Schema (Tests 001-004)
-- **test-001**: Short option `-u` with username
-- **test-002**: Long option `--username` with username
-- **test-003**: Mixed short and long options (username + password)
-- **test-004**: Boolean flag `--verbose` enabled
+The runner runs the tests in parallel (one job per CPU by default) and prints a summary.
+For a failing test it also prints what the test reported: the expected-vs-actual diff, or
+the exit code and the binary's stdout and stderr.
 
-#### Server Configuration Schema (Tests 005-007)
-- **test-005**: Host configuration only
-- **test-006**: Host and port configuration
-- **test-007**: Protocol selection and SSL verification
-
-#### Data Export Schema (Tests 008-010)
-- **test-008**: Output format selection (JSON)
-- **test-009**: Output file path specification
-- **test-010**: Compression option with format selection
-
-#### Database Connection Schema (Tests 011-013)
-- **test-011**: Minimal database name
-- **test-012**: Host configuration
-- **test-013**: Connection pooling and timeout settings
-
-#### API Client Schema (Tests 014-016)
-- **test-014**: API endpoint configuration
-- **test-015**: HTTP method selection (POST)
-- **test-016**: Multiple tag parameters (tags list)
-
-### Invalid Scenarios (Tests 017-022)
-
-#### String Validation Errors (Tests 017-020)
-- **test-017**: String fails minLength constraint (too short username)
-- **test-018**: Invalid IPv4 address pattern (malformed host)
-- **test-019**: Enum validation fails with invalid format (XML not in: json, csv, yaml)
-- **test-020**: Invalid URL pattern (malformed output path)
-
-#### Enum Negative Testing (Tests 021-022)
-- **test-021**: Export format enum rejects TOML (only json, csv, yaml allowed)
-- **test-022**: API method enum rejects PATCH (only GET, POST, PUT, DELETE allowed)
-
-## Enum Validation
-
-The test suite includes comprehensive enum validation:
-
-| Schema | Field | Valid Values | Invalid Test |
-|--------|-------|--------------|--------------|
-| export | format | json, csv, yaml | test-019 (xml), test-021 (toml) |
-| api | method | GET, POST, PUT, DELETE | test-022 (PATCH) |
-
-## Schemas Used
-
-### 1. Authentication
-```
-long=username, short=u, required=true, type=string, minLength=3
-long=password, short=p, required=false, type=string, minLength=6
-long=verbose, short=v, required=false, type=bool
-```
-
-### 2. Server
-```
-long=host, required=true, type=string, pattern=IPv4
-long=port, required=false, type=int
-long=protocol, required=false, type=string, enum=http|https
-long=sslverify, required=false, type=bool
-```
-
-### 3. Export
-```
-long=format, required=true, type=string, enum=json|csv|yaml
-long=output, required=false, type=string, pattern=path
-long=compress, required=false, type=bool
-```
-
-### 4. Database
-```
-long=dbname, required=true, type=string, minLength=1
-long=host, required=false, type=string, pattern=IPv4
-long=poolsize, required=false, type=int
-long=timeout, required=false, type=int
-```
-
-### 5. API
-```
-long=endpoint, required=true, type=string, pattern=url
-long=method, required=false, type=string, enum=GET|POST|PUT|DELETE
-long=tags, required=false, type=list, listType=string
-```
-
-## Test Execution & Linting
-
-### Quality Assurance
-All bash test scripts are validated with shellcheck for:
-- Proper quoting and variable expansion
-- Correct command syntax
-- Security best practices
-- Shell portability
-
-Run linting with:
 ```bash
-make lint-all
+scripts/run-e2e-tests.sh [BINARY] [NUM_PARALLEL]
 ```
 
-This runs:
-- Bash linting (shellcheck on all shell scripts)
-- Go linting (golangci-lint on source code)
+## Adding tests
 
-### Test Targets
+- **A contract rule:** add an `ok`, `err` or `envrun` line to the matching section of
+  `scripts/test-contract.sh`.
+- **An e2e scenario:** copy an existing `scripts/test-e2e/test-NNN-*.sh`, use the next
+  number, set the schema and arguments, and write the expected lines or error. The runner
+  picks up every `test-*.sh` file; no registration is needed.
+- **A built-in validator:** add its entry, with `Valid` and `Invalid` examples, to the
+  registry in `pkg/shopts/patterns.go`, then run `make readme`.
 
-| Target | Purpose |
-|--------|---------|
-| `make test` | Run Go unit tests + Bash basic tests |
-| `make test-go` | Run Go unit tests only |
-| `make test-bash` | Run basic bash tests |
-| `make test-e2e` | Run 22 E2E tests in parallel |
-| `make test-all` | Run all tests (Go, Bash basic, + E2E) |
-
-### Lint Targets
-
-| Target | Purpose |
-|--------|---------|
-| `make lint-bash` | Lint bash scripts with shellcheck |
-| `make lint` | Lint bash + Go code |
-| `make lint-all` | Lint bash + Go code (comprehensive) |
-
-## Test Result Interpretation
-
-Tests output:
-```
-test-001 [auth-short]: PASS
-test-002 [auth-long]: PASS
-...
-Results: 22 passed, 0 failed, 22 total (ran with N parallel jobs)
-```
-
-- **PASS**: Test executed successfully with expected behavior
-- **FAIL**: Test did not produce expected output or exited with error
-
-## Implementation Details
-
-### Parallel Execution
-The test runner implements a background job pool:
-```bash
-# Jobs are queued and executed in parallel (limited by CPU cores)
-for test_file in scripts/test-e2e/test-*.sh; do
-    # Wait for available job slot
-    while [ $(jobs -r -p | wc -l) -ge "$MAX_JOBS" ]; do
-        sleep 0.1
-    done
-    # Launch test in background
-    bash "$test_file" &
-done
-wait
-```
-
-### Cleanup & Error Handling
-- Temporary directories created by tests are cleaned up automatically
-- Process cleanup uses proper trap handlers
-- Exit codes are captured and reported
-
-## Contributing Tests
-
-When adding new E2E tests:
-1. Create `scripts/test-e2e/test-NNN-description.sh` following the naming convention
-2. Start with `#!/bin/bash` and `set -euo pipefail`
-3. Use `SCHEMA` variable for CLI definition
-4. Execute binary with `./bin/shopts "$SCHEMA" "${@}"`
-5. Validate output with appropriate assertions
-6. Make file executable: `chmod +x scripts/test-e2e/test-NNN-*.sh`
-7. Run `make test-e2e` to verify
-8. Run `make lint-bash` to ensure shellcheck compliance
+Run `make lint-bash` after changing any script.

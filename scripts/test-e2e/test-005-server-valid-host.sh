@@ -2,11 +2,12 @@
 ## Test: Server config with just host (valid)
 set -euo pipefail
 
-BINARY=${1:-bin/shopts}
+# shellcheck source=scripts/test-e2e/lib.sh
+source "$(dirname "$0")/lib.sh"
+
 SCHEMA='short=h, long=host, required=true, type=string, pattern={{ IPv4Address }}, help=Server host; short=p, long=port, type=int, default=8080, help=Server port;'
 
-if "$BINARY" "$SCHEMA" -h 192.168.1.1 >/dev/null 2>&1; then
-    exit 0
-else
-    exit 1
-fi
+expect_ok "$SCHEMA" -h 192.168.1.1 <<'EOF'
+SHOPTS_HOST=192.168.1.1
+SHOPTS_PORT=8080
+EOF

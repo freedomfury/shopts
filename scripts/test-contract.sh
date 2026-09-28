@@ -8,16 +8,27 @@ if [[ ! -x "${binary}" ]]; then
   go build -o "${binary}" ./cmd/shopts
 fi
 
+# Settings from the caller's environment must not change the output.
+unset "${!GO_SHOPTS_@}"
+
 TAB=$'\t'
 passed=0
 failed=0
+RUN_ENV=() # VAR=value settings for the next run (see envrun)
 
-# run SCHEMA ARGS... — sets OUT, ERR and RC.
+# run SCHEMA ARGS... — sets OUT (stdout, byte for byte), ERR and RC.
 run() {
   local errf
   errf=$(mktemp)
   RC=0
-  OUT=$("${binary}" "$@" 2>"${errf}") || RC=$?
+  # The trailing x keeps $(...) from stripping the output's final newline.
+  OUT=$(
+    rc=0
+    env "${RUN_ENV[@]}" "${binary}" "$@" 2>"${errf}" || rc=$?
+    printf x
+    exit "${rc}"
+  ) || RC=$?
+  OUT=${OUT%x}
   ERR=$(<"${errf}")
   rm -f "${errf}"
 }
@@ -29,9 +40,10 @@ fail() {
   printf '  rc=%s\n  stdout=%q\n  stderr=%q\n' "${RC}" "${OUT}" "${ERR}"
 }
 
-# ok NAME EXPECTED_STDOUT SCHEMA ARGS... — expects exit 0 and exact stdout.
+# ok NAME EXPECTED_STDOUT SCHEMA ARGS... — expects exit 0 and exactly the given
+# lines on stdout, each ending in a newline.
 ok() {
-  local name=$1 want=$2
+  local name=$1 want=$2$'\n'
   shift 2
   run "$@"
   if [[ ${RC} -eq 0 && "${OUT}" == "${want}" ]]; then pass; else fail "${name} (want stdout ${want@Q})"; fi
@@ -98,25 +110,16 @@ err "maxItems defaults to 100 (101 fails)" 3 "at most 100 items" 'long=t, short=
 err "pattern applies to list items" 3 "must match the pattern" 'long=t, short=t, type=list, pattern=[a-z]+;' -t ok -t NO
 
 echo "--- Invocation and configuration ---"
-# envrun NAME RC WANT VAR=VAL... -- SCHEMA ARGS... — runs with settings in the
-# environment; WANT is the exact stdout on exit 0, else a stderr substring.
+# envrun NAME RC WANT VAR=VAL... -- SCHEMA ARGS... — like ok (RC 0, WANT is the
+# stdout) or err (WANT is a stderr substring), with the settings in the
+# environment of that one run.
 envrun() {
   local name=$1 want_rc=$2 want=$3
   shift 3
-  local -a vars=()
-  while [[ $1 != -- ]]; do vars+=("$1"); shift; done
+  while [[ $1 != -- ]]; do RUN_ENV+=("$1"); shift; done
   shift
-  local errf
-  errf=$(mktemp)
-  RC=0
-  OUT=$(env "${vars[@]}" "${binary}" "$@" 2>"${errf}") || RC=$?
-  ERR=$(<"${errf}")
-  rm -f "${errf}"
-  if [[ ${RC} -eq ${want_rc} ]] && { [[ ${RC} -eq 0 && "${OUT}" == "${want}" ]] || [[ ${RC} -ne 0 && -z "${OUT}" && "${ERR}" == *"${want}"* ]]; }; then
-    pass
-  else
-    fail "${name}"
-  fi
+  if [[ ${want_rc} -eq 0 ]]; then ok "${name}" "${want}" "$@"; else err "${name}" "${want_rc}" "${want}" "$@"; fi
+  RUN_ENV=()
 }
 envrun "GO_SHOPTS_PREFIX" 0 "OPT_A${TAB}x" GO_SHOPTS_PREFIX=OPT_ -- "${S}" --a x
 envrun "GO_SHOPTS_PREFIX reserved" 1 "must not start with GO_SHOPTS_" GO_SHOPTS_PREFIX=GO_SHOPTS_X -- "${S}"

@@ -26,64 +26,88 @@ if [[ ! -x "${binary}" ]]; then
   go build -o "${binary}" ./cmd/shopts
 fi
 
-# Test: all options provided
-while IFS=$'\t' read -r k v; do
-  printf -v "${k}" '%s' "${v}"
-  declare -x "${k#SHOPTS_}"="${v}"
-done < <("${binary}" "${SCHEMA}" \
-  -s "hello" -i 99 -f 2.71 -b true -B false -e blue -l a,b,c \
-  -t tag1 -t tag2 -F -d "customdef" --nameval=valid --patternval=abc \
-  -w "test word" --longonly=custom)
+# Settings from the caller's environment must not change the output.
+unset "${!GO_SHOPTS_@}"
+
+# parse ARGS...: run the README read loop, starting from no SHOPTS_ variables,
+# and fail unless shopts exits 0.
+parse() {
+  unset "${!SHOPTS_@}"
+  while IFS=$'\t' read -r k v; do
+    printf -v "${k}" '%s' "${v}"
+  done < <("${binary}" "${SCHEMA}" "$@")
+  local rc=0
+  wait $! || rc=$?
+  if [[ ${rc} -ne 0 ]]; then
+    echo "FAIL: shopts exited ${rc}" >&2
+    exit 1
+  fi
+}
+
+# check NAME WANT: SHOPTS_NAME must equal WANT ("" means not emitted).
+check() {
+  local var="SHOPTS_$1"
+  if [[ "${!var-}" != "$2" ]]; then
+    printf 'FAIL: %s=%q, want %q\n' "${var}" "${!var-}" "$2" >&2
+    exit 1
+  fi
+  printf 'PASS: %s=%s\n' "${var}" "$2"
+}
 
 echo "--- All options provided ---"
-printf 'STRINGVAL=%s\n' "${STRINGVAL}"
-printf 'INTVAL=%s\n' "${INTVAL}"
-printf 'FLOATVAL=%s\n' "${FLOATVAL}"
-printf 'BOOLVAL=%s\n' "${BOOLVAL}"
-printf 'BOOLTRUE=%s\n' "${BOOLTRUE}"
-printf 'ENUMVAL=%s\n' "${ENUMVAL}"
-printf 'LISTVAL=%s\n' "${LISTVAL}"
-printf 'TAGLIST=%s\n' "${TAGLIST}"
-printf 'FLAGVAL=%s\n' "${FLAGVAL}"
-printf 'DEFVAL=%s\n' "${DEFVAL}"
-printf 'NAMEVAL=%s\n' "${NAMEVAL}"
-printf 'PATTERNVAL=%s\n' "${PATTERNVAL}"
-printf 'WORDONLY=%s\n' "${WORDONLY}"
-printf 'LONGONLY=%s\n' "${LONGONLY}"
+parse -s "hello" -i 99 -f 2.71 -b true -B false -e blue -l a,b,c \
+  -t tag1 -t tag2 -F -d "customdef" --nameval=valid --patternval=abc \
+  -w "test word" --longonly=custom
+check STRINGVAL hello
+check INTVAL 99
+check FLOATVAL 2.71
+check BOOLVAL true
+check BOOLTRUE false
+check ENUMVAL blue
+check LISTVAL a,b,c
+check TAGLIST tag1,tag2
+check FLAGVAL true
+check DEFVAL customdef
+check NAMEVAL valid
+check PATTERNVAL abc
+check WORDONLY "test word"
+check LONGONLY custom
 
 echo "--- Defaults and missing values ---"
-# Test: only required and some optional
-while IFS=$'\t' read -r k v; do
-  printf -v "${k}" '%s' "${v}"
-  declare -x "${k#SHOPTS_}"="${v}"
-done < <("${binary}" "${SCHEMA}" -s "world" -t only -F)
-printf 'STRINGVAL=%s\n' "${STRINGVAL}"
-printf 'INTVAL=%s\n' "${INTVAL}"
-printf 'FLOATVAL=%s\n' "${FLOATVAL}"
-printf 'BOOLVAL=%s\n' "${BOOLVAL}"
-printf 'BOOLTRUE=%s\n' "${BOOLTRUE}"
-printf 'ENUMVAL=%s\n' "${ENUMVAL}"
-printf 'LISTVAL=%s\n' "${LISTVAL}"
-printf 'TAGLIST=%s\n' "${TAGLIST}"
-printf 'FLAGVAL=%s\n' "${FLAGVAL}"
-printf 'DEFVAL=%s\n' "${DEFVAL}"
-printf 'NAMEVAL=%s\n' "${NAMEVAL}"
-printf 'PATTERNVAL=%s\n' "${PATTERNVAL}"
-printf 'WORDONLY=%s\n' "${WORDONLY}"
-printf 'LONGONLY=%s\n' "${LONGONLY}"
+parse -s "world" -t only -F
+check STRINGVAL world
+check INTVAL 42
+check FLOATVAL 3.14
+check BOOLVAL false
+check BOOLTRUE true
+check ENUMVAL green
+check LISTVAL "" # not given and no default: not emitted
+check TAGLIST only
+check FLAGVAL true
+check DEFVAL defaultval
+check NAMEVAL hi
+check PATTERNVAL abc
+check WORDONLY hello
+check LONGONLY longonly
 
-echo "--- Invalid enum value (should fail) ---"
-if "${binary}" "${SCHEMA}" -s "fail" -e yellow 2>/dev/null; then
-  echo "ERROR: Invalid enum value accepted!"
-else
+echo "--- Invalid enum value (should fail with exit 3) ---"
+rc=0
+"${binary}" "${SCHEMA}" -s "fail" -e yellow >/dev/null 2>&1 || rc=$?
+if [[ ${rc} -eq 3 ]]; then
   echo "PASS: Invalid enum value rejected."
+else
+  echo "FAIL: Invalid enum value: exit ${rc}, want 3"
+  exit 1
 fi
 
-echo "--- Missing required (should fail) ---"
-if "${binary}" "${SCHEMA}" 2>/dev/null; then
-  echo "ERROR: Missing required value accepted!"
-else
+echo "--- Missing required (should fail with exit 3) ---"
+rc=0
+"${binary}" "${SCHEMA}" >/dev/null 2>&1 || rc=$?
+if [[ ${rc} -eq 3 ]]; then
   echo "PASS: Missing required value rejected."
+else
+  echo "FAIL: Missing required value: exit ${rc}, want 3"
+  exit 1
 fi
 
 echo "--- List delimiter test (colon) ---"

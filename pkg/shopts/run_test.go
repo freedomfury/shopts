@@ -3,9 +3,21 @@ package shopts
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
+
+// TestMain clears GO_SHOPTS_ settings from the environment, so a developer's
+// exported settings cannot change what the tests see.
+func TestMain(m *testing.M) {
+	for _, kv := range os.Environ() {
+		if key, _, _ := strings.Cut(kv, "="); strings.HasPrefix(key, "GO_SHOPTS_") {
+			_ = os.Unsetenv(key)
+		}
+	}
+	os.Exit(m.Run())
+}
 
 func run(t *testing.T, schemaText string, args ...string) (string, string, int) {
 	t.Helper()

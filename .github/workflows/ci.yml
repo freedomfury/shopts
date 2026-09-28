@@ -38,6 +38,9 @@ jobs:
           ./scripts/test-extensive.sh
           ./scripts/test-contract.sh
 
+      - name: Run e2e tests
+        run: ./scripts/run-e2e-tests.sh bin/shopts
+
   lint:
     runs-on: ubuntu-latest
 

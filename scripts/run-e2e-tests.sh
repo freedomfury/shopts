@@ -37,7 +37,7 @@ run_test() {
 
     # Run the test and capture result
     set +e
-    "$test_file" "$binary" >/dev/null 2>&1
+    "$test_file" "$binary" >"$results_dir/$test_name.log" 2>&1
     exit_code=$?
     set -e
 
@@ -91,6 +91,7 @@ for result_file in "$results_dir"/*.result; do
         ((failed++))
         failed_tests="$failed_tests $test_name"
         printf "%b✗%b %s (exit: %s)\n" "$RED" "$NC" "$test_name" "$exit_code"
+        sed 's/^/    /' "$results_dir/$test_name.log"
     fi
 done
 
