@@ -3,7 +3,7 @@
 All notable changes to this project will be documented here.
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.0.16] - 2026-09-28
 
 ### Removed
 - **Breaking:** `positional=` is gone. Every argument must be an option or an option's value: a bare word, and anything after `--`, is an error (`unrecognized bare word "web"`). This catches a forgotten dash or unquoted spaces instead of silently accepting them. Leftover-argument support may come back later.
