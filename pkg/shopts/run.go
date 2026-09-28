@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -52,16 +51,16 @@ func Run(argv []string, stdout, stderr io.Writer, version string) (code int) {
 	// -H/-V before "--" decides; help needs the schema, so it waits.
 	// (A "--" that is an option's value is handled again by scan.)
 	for _, arg := range argv[1:] {
-		if arg == "--" || arg == "-H" || arg == "--help" {
+		if arg == "--" || isHelp(arg) {
 			break
 		}
-		if arg == "-V" || arg == "--version" {
+		if isVersion(arg) {
 			return printVersion()
 		}
 	}
 	// Without a schema, -H/--help describes shopts itself. A schema never
 	// starts with '-', so this is unambiguous.
-	if argv[1] == "-H" || argv[1] == "--help" {
+	if isHelp(argv[1]) {
 		if _, err := fmt.Fprintln(stderr, "usage: shopts SCHEMA [ARGS...]\n\n"+
 			"Parses ARGS against SCHEMA and prints one KEY<TAB>VALUE line per option.\n"+
 			"See https://github.com/freedomfury/shopts"); err != nil {
@@ -74,11 +73,10 @@ func Run(argv []string, stdout, stderr io.Writer, version string) (code int) {
 	if err != nil {
 		return fail(ExitFailure, "%v", err)
 	}
-	s, err := parseSchema(argv[1])
+	s, err := parseSchema(argv[1], cfg.dash)
 	if err != nil {
 		return fail(ExitSchema, "%v", err)
 	}
-	s.spell(cfg.dash)
 
 	// 1. Scan argv into raw values.
 	sc := scan(s, argv[2:])
@@ -109,30 +107,19 @@ func Run(argv []string, stdout, stderr io.Writer, version string) (code int) {
 			continue
 		}
 
-		// 3. Validate every value.
-		if e.typ == "list" {
-			if lo, hi := e.itemLimits(); len(items) < lo {
-				errs = append(errs, fmt.Sprintf("%s needs at least %d items, got %d", displayName(e), lo, len(items)))
-			} else if len(items) > hi {
-				errs = append(errs, fmt.Sprintf("%s allows at most %d items, got %d", displayName(e), hi, len(items)))
-			}
-		}
-		if e.required && strings.Join(items, "") == "" { // every item empty
-			errs = append(errs, displayName(e)+" requires a non-empty value")
+		// 3. Validate the whole value, then every item. Output is discarded
+		// if there is any error, so a bad value may still be written below.
+		if err := e.checkItems(items); err != nil {
+			errs = append(errs, displayName(e)+" "+err.Error())
 			continue
 		}
-		bad := false
 		for i, item := range items {
 			v, err := validate(e, item)
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("invalid value for %s: %v", displayName(e), err))
-				bad = true
 				continue
 			}
 			items[i] = v
-		}
-		if bad {
-			continue
 		}
 
 		// 4. Emit, in schema order.
@@ -193,8 +180,6 @@ type config struct {
 	name      string
 }
 
-var prefixRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 // loadConfig reads the settings help shows: the program name and how long
 // names are typed. The rest is read by loadOutput, so a bad output setting
 // does not block help.
@@ -223,7 +208,7 @@ func (cfg *config) loadOutput() error {
 	if strings.HasPrefix(cfg.prefix, "GO_SHOPTS_") {
 		return fmt.Errorf("GO_SHOPTS_PREFIX %q must not start with GO_SHOPTS_", cfg.prefix)
 	}
-	if cfg.prefix != "" && !prefixRE.MatchString(cfg.prefix) {
+	if cfg.prefix != "" && !isIdent(cfg.prefix) {
 		return fmt.Errorf("GO_SHOPTS_PREFIX %q is not a valid shell variable prefix", cfg.prefix)
 	}
 	return envBool("GO_SHOPTS_UPCASE", &cfg.upcase)

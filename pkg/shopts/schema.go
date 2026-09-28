@@ -11,18 +11,9 @@ import (
 // pos is a location in the schema text, as the author wrote it.
 type pos struct{ line, col int }
 
-// schemaError is a mistake in the schema, reported with where it is.
-type schemaError struct {
-	pos pos
-	msg string
-}
-
-func (e *schemaError) Error() string {
-	return fmt.Sprintf("schema line %d, col %d: %s", e.pos.line, e.pos.col, e.msg)
-}
-
+// errAt reports a mistake in the schema with where it is.
 func errAt(p pos, format string, args ...any) error {
-	return &schemaError{pos: p, msg: fmt.Sprintf(format, args...)}
+	return fmt.Errorf("schema line %d, col %d: %s", p.line, p.col, fmt.Sprintf(format, args...))
 }
 
 // rawField is one key=value pair as read by the lexer.
@@ -336,7 +327,9 @@ func dedent(s string) (string, []int) {
 // Parser
 // ---------------------------------------------------------------------------
 
-func parseSchema(text string) (*schema, error) {
+// parseSchema parses the schema text. dash is GO_SHOPTS_DASH: whether long
+// names are typed with dashes; see spell.
+func parseSchema(text string, dash bool) (*schema, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, errors.New("schema is empty")
 	}
@@ -375,7 +368,7 @@ func parseSchema(text string) (*schema, error) {
 	if err := s.check(); err != nil {
 		return nil, err
 	}
-	s.spell(true)
+	s.spell(dash)
 	return s, nil
 }
 
@@ -464,6 +457,9 @@ func buildEntry(r rawEntry, defines map[string]*validator) (*entry, error) {
 	for _, f := range fields {
 		spec := fieldTable[f.key]
 		if !spec.appliesTo(e.typ) {
+			if spec.why != "" {
+				return nil, errAt(f.keyPos, "%s: %s", f.key, spec.why)
+			}
 			return nil, errAt(f.keyPos, "field %q does not apply to type %s (only %s)",
 				f.key, e.typ, strings.Join(spec.types, ", "))
 		}
@@ -528,8 +524,8 @@ func (e *entry) check() error {
 			if err != nil {
 				return fail("default", "%v", err)
 			}
-			if lo, hi := e.itemLimits(); len(items) < lo || len(items) > hi {
-				return fail("default", "default has %d items; allowed %d to %d", len(items), lo, hi)
+			if err := e.checkItems(items); err != nil {
+				return fail("default", "default %v", err)
 			}
 			for _, item := range items {
 				if _, err := validate(e, item); err != nil {
@@ -566,6 +562,22 @@ func (s *schema) check() error {
 			}
 			shorts[e.short] = true
 		}
+	}
+	return nil
+}
+
+// checkItems applies the rules on a whole value rather than on each item:
+// a list's item count, and that a required option is not empty.
+func (e *entry) checkItems(items []string) error {
+	if e.typ == "list" {
+		if lo, hi := e.itemLimits(); len(items) < lo {
+			return fmt.Errorf("needs at least %d items, got %d", lo, len(items))
+		} else if len(items) > hi {
+			return fmt.Errorf("allows at most %d items, got %d", hi, len(items))
+		}
+	}
+	if e.required && strings.Join(items, "") == "" {
+		return errors.New("requires a non-empty value")
 	}
 	return nil
 }

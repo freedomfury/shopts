@@ -7,7 +7,7 @@ import (
 
 func mustParse(t *testing.T, text string) *schema {
 	t.Helper()
-	s, err := parseSchema(text)
+	s, err := parseSchema(text, true)
 	if err != nil {
 		t.Fatalf("parseSchema: %v", err)
 	}
@@ -16,7 +16,7 @@ func mustParse(t *testing.T, text string) *schema {
 
 func schemaErr(t *testing.T, text, want string) {
 	t.Helper()
-	_, err := parseSchema(text)
+	_, err := parseSchema(text, true)
 	if err == nil {
 		t.Fatalf("expected schema error containing %q, got none", want)
 	}
@@ -155,7 +155,7 @@ func TestSchemaRules(t *testing.T) {
 		{"default out of range", "long=a, type=int, max=10, default=11;", "must be at most 10"},
 		{"default fails pattern", "long=a, type=string, pattern=[a-z]+, default=ABC;", "must match the pattern"},
 		{"list default item fails", `long=a, type=list, pattern=[a-z]+, default="ok,NO";`, `default item "NO"`},
-		{"list default too many", `long=a, type=list, maxItems=1, default="a,b";`, "default has 2 items"},
+		{"list default too many", `long=a, type=list, maxItems=1, default="a,b";`, "default allows at most 1 items, got 2"},
 		{"minItems above default max", "long=a, type=list, minItems=150;", "minItems 150 is greater than maxItems 100 (the default)"},
 		{"required list with maxItems=0", "long=a, type=list, required=true, maxItems=0;", "minItems 1 (required lists need at least 1 item) is greater than maxItems 0"},
 		{"no options", "define=X, pattern=x;", "schema has no options"},

@@ -23,14 +23,14 @@ var benchArgs = []string{"-s", "hello", "-i", "99", "-f", "2.71", "-b", "true", 
 
 func BenchmarkParseSchema(b *testing.B) {
 	for b.Loop() {
-		if _, err := parseSchema(benchSchema); err != nil {
+		if _, err := parseSchema(benchSchema, true); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
 func BenchmarkScan(b *testing.B) {
-	s, err := parseSchema(benchSchema)
+	s, err := parseSchema(benchSchema, true)
 	if err != nil {
 		b.Fatal(err)
 	}

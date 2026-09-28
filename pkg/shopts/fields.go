@@ -14,6 +14,7 @@ var types = []string{"string", "int", "float", "bool", "enum", "flag", "list"}
 type fieldSpec struct {
 	types []string // nil: every type
 	apply func(e *entry, v string) error
+	why   string // why the field does not apply to the other types, if not obvious
 }
 
 func (f fieldSpec) appliesTo(typ string) bool {
@@ -23,22 +24,27 @@ func (f fieldSpec) appliesTo(typ string) bool {
 // fieldTable holds every option field. The type field is applied first, so
 // the others can depend on it. define entries are handled by buildDefine.
 var fieldTable = map[string]fieldSpec{
-	"long":        {nil, setLong},
-	"short":       {nil, setShort},
-	"type":        {nil, setType},
-	"required":    {nil, setRequired},
-	"default":     {nil, setDefault},
-	"help":        {nil, setHelp},
-	"description": {nil, func(e *entry, v string) error { e.description = v; return nil }},
-	"enum":        {[]string{"enum"}, setEnum},
-	"pattern":     {[]string{"string", "list"}, func(e *entry, v string) error { e.pattern = v; return nil }},
-	"failure":     {[]string{"string", "list"}, setFailure},
-	"minLength":   {[]string{"string"}, count(func(e *entry) **int { return &e.minLength }, 0)},
-	"maxLength":   {[]string{"string"}, count(func(e *entry) **int { return &e.maxLength }, 1)},
-	"min":         {[]string{"int", "float"}, limit(func(e *entry) **bound { return &e.min })},
-	"max":         {[]string{"int", "float"}, limit(func(e *entry) **bound { return &e.max })},
-	"minItems":    {[]string{"list"}, count(func(e *entry) **int { return &e.minItems }, 0)},
-	"maxItems":    {[]string{"list"}, count(func(e *entry) **int { return &e.maxItems }, 0)},
+	"long":     {apply: setLong},
+	"short":    {apply: setShort},
+	"type":     {apply: setType},
+	"required": {apply: setRequired},
+	"default": {
+		types: []string{"string", "int", "float", "bool", "enum", "list"},
+		apply: func(e *entry, v string) error { e.def = &v; return nil },
+		why: "a flag is true when given and false when not, so it cannot have a default; " +
+			"for on-by-default behavior, name the flag for turning it off, e.g. long=no_cache (typed --no-cache)",
+	},
+	"help":        {apply: setHelp},
+	"description": {apply: func(e *entry, v string) error { e.description = v; return nil }},
+	"enum":        {types: []string{"enum"}, apply: setEnum},
+	"pattern":     {types: []string{"string", "list"}, apply: func(e *entry, v string) error { e.pattern = v; return nil }},
+	"failure":     {types: []string{"string", "list"}, apply: setFailure},
+	"minLength":   {types: []string{"string"}, apply: func(e *entry, v string) (err error) { e.minLength, err = atLeast(v, 0); return }},
+	"maxLength":   {types: []string{"string"}, apply: func(e *entry, v string) (err error) { e.maxLength, err = atLeast(v, 1); return }},
+	"min":         {types: []string{"int", "float"}, apply: func(e *entry, v string) (err error) { e.min, err = parseBound(e.typ, v); return }},
+	"max":         {types: []string{"int", "float"}, apply: func(e *entry, v string) (err error) { e.max, err = parseBound(e.typ, v); return }},
+	"minItems":    {types: []string{"list"}, apply: func(e *entry, v string) (err error) { e.minItems, err = atLeast(v, 0); return }},
+	"maxItems":    {types: []string{"list"}, apply: func(e *entry, v string) (err error) { e.maxItems, err = atLeast(v, 0); return }},
 }
 
 func setLong(e *entry, v string) error {
@@ -88,15 +94,6 @@ func setRequired(e *entry, v string) error {
 	return nil
 }
 
-func setDefault(e *entry, v string) error {
-	if e.typ == "flag" {
-		return errors.New("a flag is true when given and false when not, so it cannot have a default; " +
-			"for on-by-default behavior, name the flag for turning it off, e.g. long=no_cache (typed --no-cache)")
-	}
-	e.def = &v
-	return nil
-}
-
 func setEnum(e *entry, v string) error {
 	items, err := splitItems(v)
 	if err != nil {
@@ -133,17 +130,14 @@ func oneLine(v string) error {
 	return nil
 }
 
-// count reads a whole-number field of at least lo, written as plain digits
+// atLeast reads a whole number of at least lo, written as plain digits
 // (no sign, no leading zeros).
-func count(field func(*entry) **int, lo int) func(*entry, string) error {
-	return func(e *entry, v string) error {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < lo || strconv.Itoa(n) != v {
-			return fmt.Errorf("must be a whole number of at least %d, got %q", lo, v)
-		}
-		*field(e) = &n
-		return nil
+func atLeast(v string, lo int) (*int, error) {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < lo || strconv.Itoa(n) != v {
+		return nil, fmt.Errorf("must be a whole number of at least %d, got %q", lo, v)
 	}
+	return &n, nil
 }
 
 // bound is a min or max limit, read as the entry's type.
@@ -155,34 +149,32 @@ type bound struct {
 
 func (b *bound) greater(o *bound) bool { return b.i > o.i || b.f > o.f }
 
-func limit(field func(*entry) **bound) func(*entry, string) error {
-	return func(e *entry, v string) error {
-		b := &bound{raw: v}
-		var err error
-		if e.typ == "int" {
-			b.i, err = strconv.ParseInt(v, 10, 64)
-		} else {
-			b.f, err = parseFloat(v)
-		}
-		if err != nil {
-			return fmt.Errorf("must be a valid %s, got %q", e.typ, v)
-		}
-		*field(e) = b
-		return nil
+// parseBound reads a min or max limit as a value of type typ.
+func parseBound(typ, v string) (*bound, error) {
+	b := &bound{raw: v}
+	var err error
+	if typ == "int" {
+		b.i, err = strconv.ParseInt(v, 10, 64)
+	} else {
+		b.f, err = parseFloat(v)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("must be a valid %s, got %q", typ, v)
+	}
+	return b, nil
 }
 
+// isIdent reports whether s is a shell identifier: letters, digits and _,
+// not starting with a digit.
+func isIdent(s string) bool {
+	if s == "" || (s[0] >= '0' && s[0] <= '9') {
+		return false
+	}
+	return strings.IndexFunc(s, func(r rune) bool { return !isKeyChar(r) }) < 0
+}
+
+// isName reports whether s is a valid long name: an identifier that starts
+// with a letter.
 func isName(s string) bool {
-	if s == "" {
-		return false
-	}
-	if c := s[0]; (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
-		return false
-	}
-	for _, r := range s {
-		if !isKeyChar(r) {
-			return false
-		}
-	}
-	return true
+	return isIdent(s) && s[0] != '_'
 }

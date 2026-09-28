@@ -64,7 +64,7 @@ func helpExample() string {
 	s, err := parseSchema(`
 		short=e, long=env, type=enum, enum="dev,prod", required=true, help=Target;
 		short=v, long=verbose, type=flag, help=Verbose output;
-	`)
+	`, true)
 	if err != nil {
 		panic(err)
 	}

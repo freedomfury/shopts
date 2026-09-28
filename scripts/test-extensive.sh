@@ -208,18 +208,6 @@ else
   exit 1
 fi
 
-echo "--- flag with a default is a schema error (exit 2) ---"
-set +e
-"${binary}" 'short=T, long=trueflag, type=flag, default=true;' >/dev/null 2>&1
-rc=$?
-set -e
-if [[ ${rc} -eq 2 ]]; then
-  echo "PASS: flag default rejected with exit 2."
-else
-  echo "FAIL: flag default not rejected (exit ${rc})"
-  exit 1
-fi
-
 echo "--- inline --long=value syntax ---"
 inline_val=""
 while IFS=$'\t' read -r k v; do

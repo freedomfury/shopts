@@ -35,10 +35,10 @@ func scan(s *schema, args []string) scanned {
 		switch arg := args[i]; arg {
 		case "--":
 			i = len(args)
-		case "-H", "--help":
+		case helpSwitches[0], helpSwitches[1]:
 			sc.help = true
 			return sc
-		case "-V", "--version":
+		case versionSwitches[0], versionSwitches[1]:
 			sc.version = true
 			return sc
 		default:
@@ -110,6 +110,15 @@ func scan(s *schema, args []string) scanned {
 
 	return sc
 }
+
+// The reserved switches: shopts answers them itself, from any position.
+var (
+	helpSwitches    = [2]string{"-H", "--help"}
+	versionSwitches = [2]string{"-V", "--version"}
+)
+
+func isHelp(arg string) bool    { return arg == helpSwitches[0] || arg == helpSwitches[1] }
+func isVersion(arg string) bool { return arg == versionSwitches[0] || arg == versionSwitches[1] }
 
 // displayName is how errors refer to an option.
 func displayName(e *entry) string {

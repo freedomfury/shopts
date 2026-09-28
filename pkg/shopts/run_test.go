@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -91,7 +92,7 @@ func TestRunErrorsWriteNothingToStdout(t *testing.T) {
 		{"after --", deploySchema, []string{"-e", "dev", "--", "-x"}, ExitArgs, `error: unrecognized bare word "-x" after --`},
 		{"bad list item", "long=f, type=list, pattern=[a-z]+;", []string{"--f", "ok", "--f", "UP"}, ExitArgs, "invalid value for --f: must match"},
 		{"list too few", "long=t, type=list, minItems=2;", []string{"--t", "a"}, ExitArgs, "--t needs at least 2 items, got 1"},
-		{"list too many", "long=t, type=list;", repeat("--t=x", 101), ExitArgs, "--t allows at most 100 items, got 101"},
+		{"list too many", "long=t, type=list;", slices.Repeat([]string{"--t=x"}, 101), ExitArgs, "--t allows at most 100 items, got 101"},
 		{"required list implicit min", "long=t, type=list, required=true;", nil, ExitArgs, "missing required option --t"},
 		{"required empty", "long=t, type=string, required=true;", []string{"--t="}, ExitArgs, "--t requires a non-empty value"},
 		{"required list empty", "long=t, type=list, required=true;", []string{"--t="}, ExitArgs, "--t requires a non-empty value"},
@@ -118,14 +119,6 @@ func TestRunErrorsWriteNothingToStdout(t *testing.T) {
 			}
 		})
 	}
-}
-
-func repeat(s string, n int) []string {
-	out := make([]string, n)
-	for i := range out {
-		out[i] = s
-	}
-	return out
 }
 
 func TestRunArgErrorFormat(t *testing.T) {
