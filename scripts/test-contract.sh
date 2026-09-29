@@ -16,21 +16,22 @@ passed=0
 failed=0
 RUN_ENV=() # VAR=value settings for the next run (see envrun)
 
+# One file holds each run's stderr; every run overwrites it.
+ERRF=$(mktemp)
+trap 'rm -f "${ERRF}"' EXIT
+
 # run SCHEMA ARGS... — sets OUT (stdout, byte for byte), ERR and RC.
 run() {
-  local errf
-  errf=$(mktemp)
   RC=0
   # The trailing x keeps $(...) from stripping the output's final newline.
   OUT=$(
     rc=0
-    env "${RUN_ENV[@]}" "${binary}" "$@" 2>"${errf}" || rc=$?
+    env "${RUN_ENV[@]}" "${binary}" "$@" 2>"${ERRF}" || rc=$?
     printf x
     exit "${rc}"
   ) || RC=$?
   OUT=${OUT%x}
-  ERR=$(<"${errf}")
-  rm -f "${errf}"
+  ERR=$(<"${ERRF}")
 }
 
 pass() { passed=$((passed + 1)); }
