@@ -42,7 +42,7 @@ func (r rawEntry) has(key string) bool {
 // entry is one option.
 type entry struct {
 	pos         pos
-	fieldPos    map[string]pos // where each field's value starts, for errors
+	fields      []rawField // the fields as written, for error positions
 	long        string
 	name        string // long as typed on the command line; see spell
 	short       string
@@ -64,8 +64,10 @@ type entry struct {
 
 // at returns the position of field key's value, or the entry's position.
 func (e *entry) at(key string) pos {
-	if p, ok := e.fieldPos[key]; ok {
-		return p
+	for _, f := range e.fields {
+		if f.key == key {
+			return f.valPos
+		}
 	}
 	return e.pos
 }
@@ -456,30 +458,33 @@ func buildDefine(r rawEntry) (*validator, error) {
 }
 
 func buildEntry(r rawEntry, defines map[string]*validator) (*entry, error) {
-	e := &entry{pos: r.pos, fieldPos: map[string]pos{}}
-
-	// Type first: it decides which other fields apply.
-	fields := make([]rawField, 0, len(r.fields))
-	for _, f := range r.fields {
+	fields := r.fields
+	typeAt := -1
+	for i, f := range fields {
 		if _, ok := fieldTable[f.key]; !ok {
 			return nil, errAt(f.keyPos, "unknown field %q", f.key)
 		}
-		if _, dup := e.fieldPos[f.key]; dup {
-			return nil, errAt(f.keyPos, "field %q is given twice", f.key)
+		for _, earlier := range fields[:i] {
+			if earlier.key == f.key {
+				return nil, errAt(f.keyPos, "field %q is given twice", f.key)
+			}
 		}
-		e.fieldPos[f.key] = f.valPos
 		if f.key == "type" {
-			fields = append([]rawField{f}, fields...)
-		} else {
-			fields = append(fields, f)
+			typeAt = i
 		}
 	}
-	if _, ok := e.fieldPos["long"]; !ok {
+	if !r.has("long") {
 		return nil, errAt(r.pos, "entry has no 'long' field")
 	}
-	if _, ok := e.fieldPos["type"]; !ok {
+	if typeAt < 0 {
 		return nil, errAt(r.pos, "entry has no 'type' field")
 	}
+	// Type first: it decides which other fields apply. Move it to the front
+	// in place, keeping the others in the order written.
+	typeField := fields[typeAt]
+	copy(fields[1:typeAt+1], fields[:typeAt])
+	fields[0] = typeField
+	e := &entry{pos: r.pos, fields: fields}
 
 	for _, f := range fields {
 		spec := fieldTable[f.key]

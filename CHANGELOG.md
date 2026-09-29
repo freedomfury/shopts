@@ -9,12 +9,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Faster start: a call takes about 1.3 ms instead of 2.1 ms with `make build`.
   - Built-in validator regexes are compiled on first use, not at program start (start-up went from 0.40 ms and about 2,000 allocations to 0.02 ms and 92).
   - `{{ CIDRBlock }}` uses `net/netip`, so shopts no longer imports `net` and `make build` produces a statically linked binary. A prefix length with a leading zero (`10.0.0.0/024`) is now rejected, like IPv4 addresses with leading zeros.
-  - The schema lexer takes keys and values as slices of the schema text instead of copying them one character at a time (a third fewer allocations per parse).
-
-### Planned
-Performance work measured in the code review, not done yet:
-- Build schema entries with fewer allocations (no reordering copy, no per-entry position map).
-- Reuse one temporary file in `scripts/test-contract.sh` instead of creating one per check.
+  - The schema lexer takes keys and values as slices of the schema text instead of copying them one character at a time, and schema entries are built without extra copies or a per-entry map. Together, half the allocations per parse (368 to 184).
+- `scripts/test-contract.sh` reuses one temporary file for stderr instead of creating one per check, and runs in about 0.5 s instead of 0.9 s.
 
 ### Parked
 Ideas discussed and deliberately left for later:
