@@ -244,7 +244,7 @@ func delimiter(key, fallback string) (string, error) {
 	if v == "" {
 		return fallback, nil
 	}
-	if m := templateRE.FindStringSubmatch(v); m != nil {
+	if m := templateRE().FindStringSubmatch(v); m != nil {
 		var names []string
 		for _, d := range delimiters {
 			if d.Name == m[1] {

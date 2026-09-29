@@ -2,12 +2,12 @@ package shopts
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"regexp"
 	"regexp/syntax"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // validator is a named check usable as pattern={{ Name }}. Built-ins live in
@@ -118,12 +118,12 @@ var builtins = []*validator{
 		Name:    "CIDRBlock",
 		Summary: "IP address with a prefix length",
 		Check: func(v string) bool {
-			_, _, err := net.ParseCIDR(v)
+			_, err := netip.ParsePrefix(v)
 			return err == nil
 		},
 		Failure: "must be a CIDR block like 10.0.0.0/24",
 		Valid:   []string{"10.0.0.0/24", "2001:db8::/32"},
-		Invalid: []string{"10.0.0.0", "10.0.0.0/33"},
+		Invalid: []string{"10.0.0.0", "10.0.0.0/33", "10.0.0.0/024"},
 	},
 	{
 		Name:    "AbsolutePath",
@@ -205,14 +205,14 @@ var (
 	// templateRE matches a whole-value {{ Name }} reference, any spacing.
 	// Any name is captured, so a malformed one is an unknown validator
 	// rather than a literal regex.
-	templateRE      = regexp.MustCompile(`^\{\{\s*([^{}]*?)\s*\}\}$`)
-	validatorNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+	templateRE      = lazyRegexp(`^\{\{\s*([^{}]*?)\s*\}\}$`)
+	validatorNameRE = lazyRegexp(`^[A-Za-z][A-Za-z0-9]*$`)
 )
 
 // resolvePattern turns a pattern field into a validator: a built-in or
 // defined {{ Name }}, or an inline regex.
 func resolvePattern(p string, defines map[string]*validator) (*validator, error) {
-	m := templateRE.FindStringSubmatch(p)
+	m := templateRE().FindStringSubmatch(p)
 	if m == nil {
 		return regexValidator(p)
 	}
@@ -244,7 +244,14 @@ func regexValidator(p string) (*validator, error) {
 
 // matches returns a whole-value regex check.
 func matches(p string) func(string) bool {
-	return regexp.MustCompile(`^(?:` + p + `)$`).MatchString
+	re := lazyRegexp(`^(?:` + p + `)$`)
+	return func(v string) bool { return re().MatchString(v) }
+}
+
+// lazyRegexp compiles expr on first use rather than at program start:
+// shopts runs once per script call, and most schemas use few regexes or none.
+func lazyRegexp(expr string) func() *regexp.Regexp {
+	return sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(expr) })
 }
 
 // isGitRef applies git's ref naming rules (git check-ref-format

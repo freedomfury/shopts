@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,10 +82,10 @@ func (e *entry) failureMessage() string {
 // plainDecimal is the float syntax shopts accepts: digits with an optional
 // sign, fraction and exponent. Go's extra forms (1_000, 0x1p-2, Inf, NaN)
 // are rejected, since the caller's tools may not read them.
-var plainDecimal = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
+var plainDecimal = lazyRegexp(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
 
 func parseFloat(v string) (float64, error) {
-	if !plainDecimal.MatchString(v) {
+	if !plainDecimal().MatchString(v) {
 		return 0, errors.New("must be a valid number")
 	}
 	f, err := strconv.ParseFloat(v, 64)

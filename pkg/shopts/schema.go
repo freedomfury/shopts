@@ -87,21 +87,28 @@ type schema struct {
 //	value  := quoted | bare     (bare runs to the next unquoted "," or ";")
 type lexer struct {
 	sc      scanner.Scanner
-	removed []int // columns dedent removed from each line; added back to reported columns
+	text    string // what sc reads; keys and values are slices of it
+	removed []int  // columns dedent removed from each line; added back to reported columns
 	err     error
 }
 
 func newLexer(text string) *lexer {
 	text = strings.ReplaceAll(text, "\r", "")
 	l := &lexer{err: checkUTF8(text)}
-	text, l.removed = dedent(text)
-	l.sc.Init(strings.NewReader(text))
+	l.text, l.removed = dedent(text)
+	l.sc.Init(strings.NewReader(l.text))
 	l.sc.Error = func(_ *scanner.Scanner, msg string) {
 		if l.err == nil {
 			l.err = errAt(l.pos(), "%s", msg)
 		}
 	}
 	return l
+}
+
+// offset returns the byte offset of the next character in l.text.
+func (l *lexer) offset() int {
+	l.sc.Peek()
+	return l.sc.Pos().Offset
 }
 
 // pos returns the position of the next character, as the author wrote it.
@@ -188,11 +195,11 @@ func (l *lexer) entry() (rawEntry, error) {
 func (l *lexer) field() (rawField, error) {
 	l.skip(" \t\n")
 	f := rawField{keyPos: l.pos()}
-	var b strings.Builder
+	start := l.offset()
 	for isKeyChar(l.sc.Peek()) {
-		b.WriteRune(l.sc.Next())
+		l.sc.Next()
 	}
-	f.key = b.String()
+	f.key = l.text[start:l.offset()]
 	if f.key == "" {
 		return f, errAt(f.keyPos, "expected a field name, found %s", describe(l.sc.Peek()))
 	}
@@ -222,7 +229,7 @@ func (l *lexer) value(key string) (string, error) {
 	if l.sc.Peek() == '"' {
 		return l.quoted()
 	}
-	var b strings.Builder
+	start := l.offset()
 	var newline, quote *pos // first newline; opening quote while inside quotes
 	for {
 		ch := l.sc.Peek()
@@ -244,14 +251,14 @@ func (l *lexer) value(key string) (string, error) {
 				quote = nil
 			}
 		}
-		b.WriteRune(l.sc.Next())
+		l.sc.Next()
 		if ch == '\\' && quote != nil {
 			if next := l.sc.Peek(); next == '"' || next == '\\' {
-				b.WriteRune(l.sc.Next()) // kept as written; it does not end the quotes
+				l.sc.Next() // kept as written; it does not end the quotes
 			}
 		}
 	}
-	v := strings.TrimSpace(b.String())
+	v := strings.TrimSpace(l.text[start:l.offset()])
 	if strings.ContainsRune(v, '\n') {
 		return "", errAt(*newline, "unquoted value of %q runs onto the next line; end the field with ',' or ';', or quote the value", key)
 	}
@@ -263,23 +270,43 @@ func (l *lexer) value(key string) (string, error) {
 func (l *lexer) quoted() (string, error) {
 	open := l.pos()
 	l.sc.Next()
-	var b strings.Builder
+	start := l.offset()
+	escaped := false
 	for {
-		switch ch := l.sc.Next(); ch {
+		switch l.sc.Peek() {
 		case scanner.EOF:
 			return "", errAt(open, "quoted value is never closed")
 		case '"':
-			return b.String(), nil
-		case '\\':
-			if next := l.sc.Peek(); next == '"' || next == '\\' {
-				b.WriteRune(l.sc.Next())
-				continue
+			raw := l.text[start:l.offset()]
+			l.sc.Next()
+			if escaped {
+				return unescape(raw), nil
 			}
-			b.WriteRune(ch)
+			return raw, nil
+		case '\\':
+			l.sc.Next()
+			if next := l.sc.Peek(); next == '"' || next == '\\' {
+				l.sc.Next()
+				escaped = true
+			}
 		default:
-			b.WriteRune(ch)
+			l.sc.Next()
 		}
 	}
+}
+
+// unescape applies the quoting rule to the inside of a quoted value: \" is a
+// quote and \\ a backslash; every other backslash is kept as written.
+func unescape(raw string) string {
+	var b strings.Builder
+	b.Grow(len(raw))
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '\\' && i+1 < len(raw) && (raw[i+1] == '"' || raw[i+1] == '\\') {
+			i++
+		}
+		b.WriteByte(raw[i])
+	}
+	return b.String()
 }
 
 func isKeyChar(r rune) bool {
@@ -407,7 +434,7 @@ func buildDefine(r rawEntry) (*validator, error) {
 			return nil, errAt(f.keyPos, "field %q is not allowed in a define entry (only define, pattern, failure)", f.key)
 		}
 	}
-	if !validatorNameRE.MatchString(name) {
+	if !validatorNameRE().MatchString(name) {
 		return nil, errAt(namePos, "define: name %q must start with a letter and contain only letters and digits", name)
 	}
 	if _, ok := builtinByName[name]; ok {
@@ -416,7 +443,7 @@ func buildDefine(r rawEntry) (*validator, error) {
 	if pattern == "" {
 		return nil, errAt(r.pos, "define %q has no pattern", name)
 	}
-	if templateRE.MatchString(pattern) {
+	if templateRE().MatchString(pattern) {
 		return nil, errAt(patternPos, "define %q: pattern must be a regex, not a {{ }} reference", name)
 	}
 	v, err := regexValidator(pattern)
@@ -603,7 +630,7 @@ const defaultMaxItems = 100
 // items. A bare item runs to the next ',' and is trimmed; an item may be
 // double-quoted, with the same rule as schema values, to hold a comma.
 func splitItems(s string) ([]string, error) {
-	l := &lexer{}
+	l := &lexer{text: s}
 	l.sc.Init(strings.NewReader(s))
 	l.sc.Error = func(*scanner.Scanner, string) {}
 	var out []string
@@ -621,11 +648,11 @@ func splitItems(s string) ([]string, error) {
 				return nil, fmt.Errorf("expected ',' after quoted item %q, found %q", item, ch)
 			}
 		} else {
-			var b strings.Builder
+			start := l.offset()
 			for ch := l.sc.Peek(); ch != ',' && ch != scanner.EOF; ch = l.sc.Peek() {
-				b.WriteRune(l.sc.Next())
+				l.sc.Next()
 			}
-			item = strings.TrimSpace(b.String())
+			item = strings.TrimSpace(s[start:l.offset()])
 		}
 		out = append(out, item)
 		if l.sc.Next() == scanner.EOF {
