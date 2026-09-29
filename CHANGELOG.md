@@ -5,18 +5,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Parked
+Ideas discussed and deliberately left for later:
+- Leftover arguments (`GO_SHOPTS_ARGS`): collecting bare words instead of rejecting them.
+- Making the two delimiter settings consistent. Today both accept a literal string or `{{ tab }}` / `{{ null }}`; a NUL list delimiter produces values a bash variable cannot hold.
+- From the spec: short option bundling (`-abc`), attached values (`-n5`), and list items containing the list delimiter.
+
+---
+
+## [0.0.18] - 2026-09-28
+
 ### Changed
 - Faster start: a call takes about 1.3 ms instead of 2.1 ms with `make build`.
   - Built-in validator regexes are compiled on first use, not at program start (start-up went from 0.40 ms and about 2,000 allocations to 0.02 ms and 92).
   - `{{ CIDRBlock }}` uses `net/netip`, so shopts no longer imports `net` and `make build` produces a statically linked binary. A prefix length with a leading zero (`10.0.0.0/024`) is now rejected, like IPv4 addresses with leading zeros.
   - The schema lexer takes keys and values as slices of the schema text instead of copying them one character at a time, and schema entries are built without extra copies or a per-entry map. Together, half the allocations per parse (368 to 184).
 - `scripts/test-contract.sh` reuses one temporary file for stderr instead of creating one per check, and runs in about 0.5 s instead of 0.9 s.
-
-### Parked
-Ideas discussed and deliberately left for later:
-- Leftover arguments (`GO_SHOPTS_ARGS`): collecting bare words instead of rejecting them.
-- Making the two delimiter settings consistent. Today both accept a literal string or `{{ tab }}` / `{{ null }}`; a NUL list delimiter produces values a bash variable cannot hold.
-- From the spec: short option bundling (`-abc`), attached values (`-n5`), and list items containing the list delimiter.
 
 ---
 
